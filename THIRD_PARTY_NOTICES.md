@@ -8,7 +8,8 @@ license of the folder it is in (see below).
 
 | Project | Used for | License |
 |---|---|---|
-| [sa2-nx](https://github.com/ChanseyIsTheBest/sa2-nx) by ChanseyIsTheBest | The tree this port started from: the SDK fork with its Horizon layer and code generator changes, the build, PGO and release setup, the installer method and many scripts in `tools/` | GPL-3.0; BSD-3-Clause for the SDK parts |
+| [futari-nx](https://github.com/ChanseyIsTheBest/futari-nx) by ChanseyIsTheBest | The tree this port is made from (version 1.0.1): the SDK fork, the code generator pipeline and its post-codegen steps, Renut's deko3d renderer as Futari adapted it, the native-function framework, the CPU and input-lag work, the build, PGO and release setup; Futari's own sources are still in the tree, not built | GPL-3.0; BSD-3-Clause for the SDK parts |
+| [sa2-nx](https://github.com/ChanseyIsTheBest/sa2-nx) by ChanseyIsTheBest | The tree futari-nx started from: the SDK fork with its Horizon layer and code generator changes, the build, PGO and release setup, the installer method and many scripts in `tools/` | GPL-3.0; BSD-3-Clause for the SDK parts |
 | [masseffect-nx](https://github.com/nebadasSwifty/masseffect-nx) by NebadasSwifty | The native renderer (`app/src/me`), the structure of `app/`, the shader library tools (`shaders/tools`), the CPU enhancement framework | GPL-3.0 |
 | banjo-nx (Banjo-Kazooie: Nuts & Bolts port) | The raw shader wrapping walk of `tools/wrap_discovered.py`, several renderer fixes | GPL-3.0 |
 | [nfsmw-nx](https://github.com/StevensND/nfsmw-nx) by StevensND | The Horizon (Switch) layer of the SDK, the NVK driver build the NRO links, the profiling and PGO method | GPL-3.0; BSD-3-Clause for the SDK parts |
@@ -17,7 +18,7 @@ license of the folder it is in (see below).
 | Horizon (Switch) layer of the SDK by StevensND | `sdk/src/**/*_switch.*`, `sdk/src/ui/switch_*.cpp`, `sdk/src/input/switch/`, `sdk/src/audio/switch/`, `sdk/cmake/rexglue_switch.cmake`, `sdk/switch_compat/`: guest memory, exception handling, threading, input, audio, presentation, clocks | BSD-3-Clause (as part of the SDK) |
 | Scripts and toolchain file by StevensND | `tools/find_gaps.py`, `tools/read_before_write.py`, `tools/direct_calls.py`, `tools/fetch_thirdparty.py`, `tools/switch/cmake/switch-devkitA64.cmake`, adapted for this game | GPL-3.0 |
 | [XenosRecomp](https://github.com/hedge-dev/XenosRecomp) by hedge-dev and contributors, with the changes of nfsmw-nx, masseffect-nx, sa2-nx and this port | `shaders/XenosRecomp`: Xenos microcode to HLSL translator | MIT (`shaders/LICENSE.md`) |
-| [mesa-switch](https://github.com/danfromtico/mesa-switch) by danfromtico (with NaGaa95's updates), on top of [Mesa](https://mesa3d.org) | The Vulkan driver (NVK) and shader compiler (NAK) linked into the NRO: nfsmw-nx's build, which this port does not change (`mesa/README.md`) | MIT (Mesa's licenses per file) |
+| [mesa-switch](https://github.com/danfromtico/mesa-switch) by danfromtico (with NaGaa95's updates), on top of [Mesa](https://mesa3d.org) | The Vulkan driver (NVK) and shader compiler (NAK) of nfsmw-nx's build, which this port does not change (`mesa/README.md`): its Vulkan headers build plume; the released NRO links no Vulkan driver (deko3d only) | MIT (Mesa's licenses per file) |
 
 The Horizon (Switch) layer added to `sdk/` is under the SDK's BSD-3-Clause license, and the changes in `shaders/`
 under XenosRecomp's MIT license, so they can be reused by other ports. The rest of this repository (`app/`, `tools/`,
@@ -72,7 +73,7 @@ This port changes these files of the SDK's third-party tree; the changed copies 
 
 - `FFmpeg/libavcodec/fft_template.c` and `FFmpeg/libavcodec/mdct_template.c`
 - `FFmpeg/config.h`, plus `FFmpeg/config_switch_aarch64.h` and `FFmpeg/config_masseffect_wmv3.h` (new): the
-  configuration for AArch64 Horizon, and the WMV3 decoder that masseffect-nx added (compiled, not enabled for Futari)
+  configuration for AArch64 Horizon, and the WMV3 decoder that masseffect-nx added (compiled, not enabled for Guwange)
 - `ffmpeg-overlay/codec_list.c`: the list of registered codecs
 - `CMakeLists.txt`: builds the libraries for the Switch
 
@@ -82,18 +83,19 @@ Everything needed to rebuild and relink the NRO with a modified version of eithe
 
 ## The installer page
 
-The installer page is its own repository, [futari-nx-installer](https://github.com/ChanseyIsTheBest/futari-nx-installer).
-Its WebAssembly shader translator, packer and LZX decoder are built from `shaders/` and `sdk/thirdparty/libmspack` of
-this repository (`shaders/wasm/build_wasm_tools.sh`, with [Emscripten](https://emscripten.org): MIT and the University
-of Illinois/NCSA license). Its DXC is nfsmw-nx-installer's WebAssembly build of the unmodified
+The installer page is its own repository, [guwange-nx-installer](https://github.com/ChanseyIsTheBest/guwange-nx-installer),
+built on peggle1-nx-installer and futari-nx-installer. Its WebAssembly modules are theirs: Renut's shader translator and
+SPIRV-Cross (the same translator sources as `app/thirdparty/reblue-XenosRecomp` here), the LZX decoder and the LZX
+delta decoder (libmspack), built with [Emscripten](https://emscripten.org) (MIT and the University of Illinois/NCSA
+license). Its DXC is nfsmw-nx-installer's WebAssembly build of the unmodified
 [DirectXShaderCompiler](https://github.com/microsoft/DirectXShaderCompiler) v2025.1 (commit `75a029d95`), with the
 `dxc_web.cpp` wrapper that is also in `shaders/wasm/` (University of Illinois/NCSA Open Source License, with LLVM's
 license terms; SPIRV-Tools Apache-2.0; SPIRV-Headers MIT).
 
 ## Trademarks
 
-Mushihimesama Futari is a trademark of CAVE Interactive; the icon (`app/futari_icon.jpg`, cropped from the cover) is
-CAVE's artwork. Nintendo Switch is a trademark of Nintendo. Xbox 360 is a trademark of Microsoft. This project is not
+Guwange and Mushihimesama Futari are trademarks of CAVE Interactive; the icons (`app/guwange_icon.jpg`, cropped from
+the game's title artwork, and Futari's `app/futari_icon.jpg`) are CAVE's artwork. Nintendo Switch is a trademark of Nintendo. Xbox 360 is a trademark of Microsoft. This project is not
 affiliated with or endorsed by any of them.
 
 ## The deko3d renderer (app/src/renut_engine, app/thirdparty)

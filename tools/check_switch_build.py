@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks a Switch build before it is packaged (sa2-nx's tools/check_switch_build.py, from sasrt-nx and nfsmw-nx).
 
-  python tools/check_switch_build.py [--elf out/switch/futari] [--nro out/switch/futari.nro]
+  python tools/check_switch_build.py [--elf out/switch/guwange] [--nro out/switch/guwange.nro]
 
 Checks (exit 1 if any fails):
   - _start is at address 0 (nfsmw-nx: a section-ordering file that moved the start-up code made the NRO unbootable;
@@ -34,8 +34,8 @@ EXE = '.exe' if os.name == 'nt' else ''
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--elf', default=os.path.join(ROOT, 'out', 'switch', 'futari'))
-    ap.add_argument('--nro', default=os.path.join(ROOT, 'out', 'switch', 'futari.nro'))
+    ap.add_argument('--elf', default=os.path.join(ROOT, 'out', 'switch', 'guwange'))
+    ap.add_argument('--nro', default=os.path.join(ROOT, 'out', 'switch', 'guwange.nro'))
     ap.add_argument('--sdk-vulkan', default='C:/devkitPro/mesa-switch-main-nfsmw-source/mesa-switch-main/'
                     'mesa-unified-install/opt/devkitpro/portlibs/switch/lib/libvulkan.a')
     a = ap.parse_args()
@@ -53,7 +53,7 @@ def main():
     nvk = True
     cache = os.path.join(os.path.dirname(os.path.abspath(a.elf)), 'CMakeCache.txt')
     if os.path.exists(cache):
-        m = re.search(r'^FUTARI_SWITCH_NVK:BOOL=(\w+)', open(cache, encoding='utf-8', errors='replace').read(), re.M)
+        m = re.search(r'^(?:FUTARI_SWITCH_NVK|REXGLUE_SWITCH_LINK_NVK):BOOL=(\w+)', open(cache, encoding='utf-8', errors='replace').read(), re.M)
         if m:
             nvk = m.group(1).upper() in ('ON', 'TRUE', '1', 'YES')
     if nvk:
@@ -62,7 +62,7 @@ def main():
         if not mesa or mesa != sdk:
             failures.append('the NRO does not carry the SDK driver\'s Mesa string')
     else:
-        print('Mesa in the NRO:', [m.decode() for m in mesa], '(FUTARI_SWITCH_NVK=OFF: none expected)')
+        print('Mesa in the NRO:', [m.decode() for m in mesa], '(no NVK linked: none expected)')
         if mesa:
             failures.append('FUTARI_SWITCH_NVK is OFF but the NRO carries a Mesa driver')
 

@@ -18,7 +18,7 @@ GEN = os.path.join(ROOT, 'app', 'generated')
 def function_text(module, address):
     name = 'sub_%08X' % address
     start = re.compile(r'^(?:DEFINE_REX_FUNC|PPC_FUNC_IMPL)\((?:__imp__)?%s\)' % name)
-    for path in sorted(glob.glob(os.path.join(GEN, module, 'futari_recomp.*.cpp'))):
+    for path in sorted(glob.glob(os.path.join(GEN, module, '*_recomp.*.cpp'))):
         lines = open(path, encoding='utf-8').read().split('\n')
         for i, line in enumerate(lines):
             if start.match(line):

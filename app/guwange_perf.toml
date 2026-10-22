@@ -1,0 +1,57 @@
+# Guwange (2026-10-21): futari-nx's app/perf_overrides.toml up to its phase 2: the options exact by construction.
+# The register-local options (non_volatile_as_local and co.) need their audits on Guwange's code first.
+#
+# Code generation options for speed (masseffect-nx's perf_overrides.toml, docs/optimization-paths.md section 1), for
+# default.xex and every game core. Build-time: they change the generated code, so the A/B is a pair of builds
+# (tools/codegen.ps1 -Perf vs the baseline in out/generated_baseline), not a toml switch.
+#
+# Phase 1 (2026-10-06): the options that need no per-function liveness analysis.
+#   cr/xer/ctr/reserved as locals, skip_msr: masseffect-nx t250 -3.4 % with the reservation local
+#   elide_lr_stores + dform_disp_split + fctiwz_inline ("diet"): masseffect-nx t255 main thread -10 %
+# Phase 2 (non_volatile_as_local / non_argument_as_local) is at the end of this file (2026-10-14).
+cr_as_local = true
+xer_as_local = true
+ctr_as_local = true
+reserved_as_local = true
+skip_msr = true
+elide_lr_stores = true
+dform_disp_split = true
+fctiwz_inline = true
+#
+# 2026-10-14 (version 1.0.1): sa2-nx's generator at its 1.0.1 (sdk/src/codegen; with these options unset the generated
+# code is byte for byte what 1.0.0 was built from) and the options of its CPU rounds that are exact by construction,
+# each with a unit test in sdk/tests (tools/win/run_sdk_tests.ps1):
+#   fp_moves_modeless      lfd/stfd forms, stfiwx, fmr, fabs, fnabs, fneg only move bits: no host flush-mode switch
+#                          (an `msr fpcr` on the A57); in VMX mode lfs/stfs convert through any-mode helpers
+#   fp_compares_modeless   fcfid, fctiwz, fctidz, fsel switch nothing; fcmpu / fcmpo / frsp through any-mode helpers
+#                          while VMX mode is current
+#   fp_mode_lookahead      before a scalar float instruction switches, the generator looks at the next instruction that
+#                          needs a mode; fp_mode_lookahead_past_branch = false keeps the any-mode forms where they
+#                          replace a switch for certain (sa2-nx: the bet past a branch lost in mostly scalar code)
+#   fcti_inline            fctid / fctiw / fctidz as frinti + fcvtzs. Also a CORRECTION of the Switch build: simde's
+#                          portable conversion is C round(), halves away from zero, where the 360 and the PC build
+#                          round in the current mode (23 fcvtas in the game code of 1.0.0; sdk/tests/fcti_copy_test.cpp)
+#   fp_copy_pairs          a float copied through a register (lfs then stfs of it) writes the loaded bits: no mode
+#   div_inline             divw / divwu / divd / divdu as sdiv / udiv (AArch64 defines /0 and INT_MIN / -1) and one
+#                          select, instead of guards the compiler keeps as branches
+fp_moves_modeless = true
+fp_compares_modeless = true
+fp_mode_lookahead = true
+fp_mode_lookahead_past_branch = false
+fcti_inline = true
+fp_copy_pairs = true
+div_inline = true
+#
+# 2026-10-19: banjo-nx's codegen round (docs/futari-notes.md, "Banjo's codegen round"), each exact by construction:
+#   rotate_word_shifts     rlwinm / rlwimi with an immediate shift and a mask that does not wrap as the plain 32-bit
+#                          shift, extract or rotate the mask makes of them (one lsl / lsr / ubfiz / ubfx where the
+#                          64-bit rotate of the duplicated word took two or three; sdk/tests/rotate_word_test.cpp)
+#   fp_copy_forwarding     with fp_copy_pairs: a single copied through a register (lfs ... stfs) writes the loaded bits
+#                          in either mode, also with other instructions between and through an fneg / fabs / fnabs of
+#                          the register in place (the sign bit flipped, cleared or set)
+#   dcbt_prefetch          the guest's dcbt / dcbtst hints as host prefetches of the same address (a prefetch never
+#                          faults and changes no value), with banjo-nx's operand fix (dcbt is {CT, RA, RB}: RA + RB)
+rotate_word_shifts = true
+fp_copy_forwarding = true
+dcbt_prefetch = true
+#

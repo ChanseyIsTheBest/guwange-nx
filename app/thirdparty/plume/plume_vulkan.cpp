@@ -527,6 +527,13 @@ namespace plume {
             return VK_FORMAT_BC7_UNORM_BLOCK;
         case RenderFormat::BC7_UNORM_SRGB:
             return VK_FORMAT_BC7_SRGB_BLOCK;
+        // guwange-nx (2026-10-22): the same bit orders (Vulkan 1.3 / 1.4 formats; sampling support is optional).
+        case RenderFormat::A1B5G5R5_UNORM:
+            return VK_FORMAT_A1B5G5R5_UNORM_PACK16;
+        case RenderFormat::B5G6R5_UNORM:
+            return VK_FORMAT_B5G6R5_UNORM_PACK16;
+        case RenderFormat::A4B4G4R4_UNORM:
+            return VK_FORMAT_A4B4G4R4_UNORM_PACK16;
         default:
             assert(false && "Unknown format.");
             return VK_FORMAT_UNDEFINED;

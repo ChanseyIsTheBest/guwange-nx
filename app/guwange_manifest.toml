@@ -1,0 +1,52 @@
+# ReXGlue recompilation manifest for Guwange (Xbox Live Arcade, CAVE, title 58410A78), with Title Update #1.
+#
+# Run tools/codegen.ps1: it calls `rexglue codegen guwange_manifest.toml`. The project name sets the prefix of
+# everything generated: generated/<binary>/guwange_{init,pch,funcs}.h, guwange_recomp.N.cpp, the CMake target
+# guwange_recomp and one shared library (PC) or static module (Switch) per game core, guwange_<core>.
+#
+# default.xex: image base 0x82000000, entry point 0x8221C770, the front end. Each game mode runs in a game-core DLL of
+# module/ (Guwange01_x360 = the arcade game, Guwange01_coop_x360 = its two-player co-op, Guwange_arrange_x360 and
+# Guwange_blue_x360 = the 360 modes), all built for the same base, 0x88000000, as Futari's cores (the generator
+# processes them one after another: futari-nx's sdk change in src/codegen/project_recompiler.cpp).
+#
+# Title Update #1 (default.xexp, module/*.dllp, from the update package) sits next to each binary in game_root: the
+# SDK applies a sibling ".xexp" / ".dllp" when it loads the binary, at code generation and at run time, so every
+# address here and in the overrides is the patched image's.
+
+[project]
+name = "guwange"
+sdk_version = "0.10.0"
+# Your own game files: the XBLA package extracted (tools/stfs_extract.py) with the title update's files beside them.
+# Nothing from the game is distributed with this project.
+game_root = "../assets/game_root"
+
+[entrypoint]
+file_path = "../assets/game_root/default.xex"
+out_directory_path = "generated/default"
+#   guwange_overrides.toml   written by hand: code the automatic function discovery misses, each with its evidence
+#   guwange_perf.toml        the generator options for speed that are exact by construction
+includes = ["guwange_overrides.toml", "guwange_perf.toml"]
+
+[[modules]]
+guest_path = "module/Guwange01_x360.dll"
+file_path = "../assets/game_root/module/Guwange01_x360.dll"
+out_directory_path = "generated/guwange01"
+includes = ["guwange_overrides_guwange01.toml", "guwange_perf.toml"]
+
+[[modules]]
+guest_path = "module/Guwange01_coop_x360.dll"
+file_path = "../assets/game_root/module/Guwange01_coop_x360.dll"
+out_directory_path = "generated/guwange01_coop"
+includes = ["guwange_overrides_guwange01_coop.toml", "guwange_perf.toml"]
+
+[[modules]]
+guest_path = "module/Guwange_arrange_x360.dll"
+file_path = "../assets/game_root/module/Guwange_arrange_x360.dll"
+out_directory_path = "generated/guwange_arrange"
+includes = ["guwange_overrides_guwange_arrange.toml", "guwange_perf.toml"]
+
+[[modules]]
+guest_path = "module/Guwange_blue_x360.dll"
+file_path = "../assets/game_root/module/Guwange_blue_x360.dll"
+out_directory_path = "generated/guwange_blue"
+includes = ["guwange_overrides_guwange_blue.toml", "guwange_perf.toml"]

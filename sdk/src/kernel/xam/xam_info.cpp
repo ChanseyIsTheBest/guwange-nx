@@ -284,13 +284,16 @@ void XamLoaderLaunchTitle_entry(mapped_string raw_name_ptr, u32 flags) {
     assert_always("Game requested exit to dashboard via XamLoaderLaunchTitle");
   }
 
-  // This function does not return.
+  // This function does not return. guwange-nx (2026-10-22): nor does the thread that called it go on: it carried on
+  // into the game after TerminateTitle and crashed in the runtime's teardown (Guwange's "Return to Game Library").
   REX_KERNEL_STATE()->TerminateTitle();
+  rex::system::XThread::CheckTitleTermination();
 }
 
 void XamLoaderTerminateTitle_entry() {
-  // This function does not return.
+  // This function does not return (guwange-nx: the calling thread leaves too, as above).
   REX_KERNEL_STATE()->TerminateTitle();
+  rex::system::XThread::CheckTitleTermination();
 }
 
 u32 XamAlloc_entry(u32 unk, u32 size, mapped_u32 out_ptr) {

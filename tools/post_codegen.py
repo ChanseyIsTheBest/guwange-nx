@@ -69,8 +69,12 @@ tools/switch_goto.py (no hot jump-table interpreter), tools/hot_layout.py (FUTAR
 profile's functions already), tools/store_cards.py (Renut's renderer only).
 
 Steps 6 (default.xex), 7, 11 and 13-14 need the generator's image dumps (out/<module>_image.bin, written by
-tools/codegen.ps1 through REXGLUE_DUMP_IMAGE) and steps 7 and 11 the modules' XEX files (app/futari_manifest.toml
-names them).
+tools/codegen.ps1 through REXGLUE_DUMP_IMAGE) and steps 7 and 11 the modules' XEX files (the port's manifest names
+them).
+
+guwange-nx (2026-10-22): the same steps for any port's tree. The module folders, the pch's name, the image dumps and
+the XEX files come from the port's manifest (tools/project.py); step 12 is futari-nx's only (Guwange has no localized
+copies). tools/guwange_post_codegen.py runs tools/spin_forever.py first and then this script.
 
 Every step has its compile-time switch back (app/CMakeLists.txt, FUTARI_SWITCH_* and FUTARI_GEN_*), is idempotent, and
 so is the sequence: a second run on a processed tree changes no file (the profile of a PGO build fits only the exact
@@ -91,8 +95,12 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, 'app')
 GEN = os.path.join(APP, 'generated')
-TREES = ('default', 'palm_normal', 'palm_abnormal', 'reco_normal', 'reco_abnormal', 'hirow_normal', 'hirow_abnormal',
-         'kiniro_normal', 'kiniro_abnormal')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import project  # noqa: E402  (guwange-nx, 2026-10-22: the port's names and modules, from its manifest)
+TREES = project.trees()
+PCH = project.name() + '_pch.h'
+# Futari's localized copies of its hottest functions (step 12): only in futari-nx's build.
+LOCALIZED = project.name() == 'futari'
 
 
 def run(*args):
@@ -138,13 +146,8 @@ def per_module(trees, steps, jobs):
 
 
 def xex_files():
-    """tree -> the module's XEX file, from app/futari_manifest.toml (file_path / out_directory_path pairs)."""
-    text = open(os.path.join(APP, 'futari_manifest.toml'), encoding='utf-8').read()
-    out = {}
-    for m in re.finditer(r'^file_path\s*=\s*"([^"]+)"\s*\n(?:[^\n\[]*\n)*?out_directory_path\s*=\s*"generated/(\w+)"',
-                         text, re.M):
-        out[m.group(2)] = os.path.normpath(os.path.join(APP, m.group(1)))
-    return out
+    """tree -> the module's XEX file, from the port's manifest (tools/project.py: file_path / out_directory_path)."""
+    return project.xex_files()
 
 
 def main():
@@ -156,15 +159,15 @@ def main():
     scratch_gen = ['--gen', gen] if scratch else []
     trees = [t for t in TREES if os.path.isdir(os.path.join(gen, t))]
     folders = [os.path.join(gen, t) for t in trees]
-    pchs = [os.path.join(f, 'futari_pch.h') for f in folders]
+    pchs = [os.path.join(f, PCH) for f in folders]
     xex = xex_files()
-    images = {t: os.path.join(ROOT, 'out', f'{t}_image.bin') for t in trees}
+    images = {t: project.image_path(t) for t in trees}
     for t in trees:
         if not os.path.isfile(images[t]):
             sys.exit(f'post_codegen: {images[t]} is missing (the image dump of the code generator): run '
                      'tools\\codegen.ps1 -Perf once, it writes it (REXGLUE_DUMP_IMAGE)')
         if t not in xex or not os.path.isfile(xex[t]):
-            sys.exit(f'post_codegen: no XEX file for {t} (app/futari_manifest.toml names {xex.get(t)})')
+            sys.exit(f'post_codegen: no XEX file for {t} ({project.manifest_path()} names {xex.get(t)})')
         if os.path.getmtime(xex[t]) > os.path.getmtime(images[t]):
             sys.exit(f'post_codegen: {images[t]} is older than {xex[t]}: run tools\\codegen.ps1 -Perf (it writes the '
                      'dump again)')
@@ -197,7 +200,7 @@ def main():
         run_one(tool('flush_mode_flow.py'), '--redo', '--gen', folder,
                 *(['--image', images[t]] if t == 'default' else []))
         run_one(tool('vec_byteswap.py'), '--gen', folder)
-        run_one(tool('pch_neon_shuffles.py'), os.path.join(folder, 'futari_pch.h'))
+        run_one(tool('pch_neon_shuffles.py'), os.path.join(folder, PCH))
         # 7. Read-only constants. 8. Float loads. 9. The frame marks. 10. Loop and leaf locals.
         run_one(tool('ro_constants.py'), '--gen', folder, '--image', images[t], '--xex', xex[t])
         run_one(tool('float_loads.py'), '--gen', folder)
@@ -220,7 +223,7 @@ def main():
 
     per_module(trees, steps_a, jobs)
     # 12. The localized copies, from the text as it is now.
-    if not scratch:
+    if not scratch and LOCALIZED:
         run(tool('localize_native.py'), '--list', os.path.join(APP, 'src', 'native', 'hot_functions.txt'))
     def steps_b(t, run_one):
         folder = os.path.join(gen, t)
@@ -275,7 +278,7 @@ def keep_times(folders):
     # banjo-nx's keep_unchanged_times (2026-10-16), found here again on 2026-10-19: a time given back must never be
     # older than an input of the build's codegen step (codegen.d: the XEX files and the tomls; the generator binaries),
     # or ninja finds the step's outputs older than its inputs and runs the generator and these steps on every build.
-    manifest = os.path.join(APP, 'futari_manifest.toml')
+    manifest = project.manifest_path()
     inputs = set()
     for folder in folders:
         dep = os.path.join(folder, 'codegen.d')

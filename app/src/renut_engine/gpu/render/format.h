@@ -180,6 +180,17 @@ TextureFormatInfo GetTextureFormatInfo(GpuTextureFormat format, bool is_signed);
 // Converts 'count' guest blocks (already byte-swapped per the fetch endian)
 // into host blocks.
 void ConvertTexels(TexelConversion conversion, const uint8_t *src, uint8_t *dst, uint32_t count);
+// guwange-nx (2026-10-22, banjo_renut_neon_texels): one row of a linear 16-bit texture straight from guest memory:
+// SwapEndian(endian) and ConvertTexels in one pass, without the row buffer. False (nothing written) when the
+// conversion or the endian mode is not one it does; the caller then copies, swaps and converts as before.
+bool ConvertTexelsFromGuest(TexelConversion conversion, u32 endian, const uint8_t *src, uint8_t *dst, uint32_t count);
+// guwange-nx (2026-10-22, banjo_renut_native_16bit_textures): the info of a linear texture of a 16-bit packed format on
+// deko3d: its own 16-bit host format (the Xenos component order, red in the lowest bits), copied after the endian
+// swap; else 'info' unchanged.
+TextureFormatInfo NativeLinear16BitInfo(const TextureFormatInfo &info);
+// banjo_renut_fused_texel_rows: a row of a Copy format straight from guest memory, endian-swapped into 'dst' in one
+// pass (the bytes SwapEndian leaves as they are copied as they are). False (nothing written) with the key off.
+bool CopyRowFromGuest(u32 endian, const uint8_t *src, uint8_t *dst, size_t bytes);
 
 // Decodes a row of 'count' guest blocks (already byte-swapped) of a
 // decoded_blocks format into block_size rows of host texels, 'dst_row_pitch'

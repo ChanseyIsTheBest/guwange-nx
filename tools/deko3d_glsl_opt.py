@@ -434,6 +434,39 @@ def pass_tess(text):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# pass: boundfmt - the vertex shader's bound fetch types as specialization constants 920-935 (guwange-nx, 2026-10-21)
+
+BOUND_WORD = re.compile(r'g_UboShared\.v\[(6[6-9]|7[0-9]|8[01])u\]\.w')
+
+
+def pass_boundfmt(text):
+    """SharedConstants.bound_fetch[i][3] (the declaration type of an input the shader reads by another index than the
+    vertex index, vfetchBound: format, signedness, integer) as specialization constant 920 + i, its value + 1 (0: read
+    at run time): render/pipeline.cpp gives the declaration's types (banjo_deko3d_bound_fetch_spec; the key has them
+    from the declaration). Each such fetch decodes every format at run time (a switch over 64 cases of unrolled
+    component code): Guwange's instanced sprite shaders, eight bound fetches each, were 214 KB of GLSL, which Ryujinx's
+    GPU thread did not get through (its first runs: the first frame's fence never signalled). With the type a constant
+    uam keeps one case."""
+    span = main_span(text)
+    if not span:
+        return text
+    a, b = span
+    body = text[a:b]
+    found = sorted({int(m.group(1)) - 66 for m in BOUND_WORD.finditer(body)})
+    if not found:
+        return text
+    body = BOUND_WORD.sub(lambda m: f'DK_BOUND_TYPE{int(m.group(1)) - 66}', body)
+    decl = ''.join(
+        f'#ifndef SPIRV_CROSS_CONSTANT_ID_{920 + i}\n#define SPIRV_CROSS_CONSTANT_ID_{920 + i} 0u\n#endif\n'
+        f'const uint g_banjoBoundType{i} = SPIRV_CROSS_CONSTANT_ID_{920 + i};\n'
+        f'#define DK_BOUND_TYPE{i} ((g_banjoBoundType{i} != 0u) ? (g_banjoBoundType{i} - 1u) : '
+        f'g_UboShared.v[{66 + i}u].w)\n'
+        for i in found)
+    text = text[:a] + body + text[b:]
+    return insert_before_main(text, decl)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # pass: vsout — the vertex shader's outputs the pixel shader reads, as specialization constant 905
 
 VSOUT_DECL = ('#ifndef SPIRV_CROSS_CONSTANT_ID_905\n#define SPIRV_CROSS_CONSTANT_ID_905 4294967295u\n#endif\n'
@@ -1992,6 +2025,7 @@ PASSES = [
     ('fragscale', pass_fragscale),
     ('alpha', pass_alpha),
     ('tess', pass_tess),
+    ('boundfmt', pass_boundfmt),
     ('bonerow', pass_bonerow),
     ('vszero', pass_vszero),
     ('vsout', pass_vsout),
@@ -2020,7 +2054,7 @@ DEFAULT = ','.join(name for name, _ in PASSES)
 
 
 # The passes for one stage only.
-STAGE_OF = {'bonesel': 'vert', 'aw4': 'vert', 'lightbranch': 'frag', 'nullps': 'frag', 'gpr32': 'frag', 'earlyz': 'frag', 'txq': 'frag', 'alpha': 'frag', 'alphamask': 'frag', 'earlyhoist': 'frag', 'tess': 'vert', 'vsout': 'vert', 'vszero': 'vert', 'pszero': 'frag'}
+STAGE_OF = {'bonesel': 'vert', 'aw4': 'vert', 'lightbranch': 'frag', 'nullps': 'frag', 'gpr32': 'frag', 'earlyz': 'frag', 'txq': 'frag', 'alpha': 'frag', 'alphamask': 'frag', 'earlyhoist': 'frag', 'tess': 'vert', 'boundfmt': 'vert', 'vsout': 'vert', 'vszero': 'vert', 'pszero': 'frag'}
 
 
 def optimise(text, passes=DEFAULT, stage=None, name=None):

@@ -1,0 +1,35 @@
+# Analysis corrections for the game core module/Guwange_arrange_x360.dll (with its Title Update #1 patch). Every entry needs
+# its evidence.
+
+[functions]
+# The byte tail of the CRT's copy routine (andi. r0,r5,3; mtctr r0; beqlr; lbz/stb; bdnz; blr), reached by a `b` the
+# automatic discovery had not assigned to a function ("target not in any function"; found in every core by its words,
+# 2026-10-21, after Guwange01's and the co-op core's validation runs). The caller is listed.
+"0x886236AC" = { }  # from 0x886236FC
+
+# Code pointers into unclaimed gaps, stored in data (vtables, callback tables) or built in code (lis/addi:
+# callbacks passed at run time), accepted by tools/pointer_fixpoint.py pass 1: the scratch listing fits
+# in the gap (or continues only into a registered function it branches to: "then the registered tail"),
+# ends in a terminator and reads no register that is undefined at a function entry. The comment says
+# where the pointer is stored ("pointer at") or built ("built at", inside the code range).
+"0x8803D018" = { }  # 11 instructions, pointer at 0x886C3974
+"0x88083C00" = { }  # 11 instructions, pointer at 0x886CFBB4 (+2 more)
+"0x8813F9E8" = { }  # 14 instructions, pointer at 0x886F75F4
+"0x8823E2E8" = { }  # 22 instructions, pointer at 0x886CFBA4 (+5 more)
+"0x8825C828" = { }  # 26 instructions, pointer at 0x88755354
+"0x8825CEB8" = { }  # 26 instructions, pointer at 0x88755544
+"0x8825EE90" = { }  # 26 instructions, pointer at 0x88756324
+"0x8825F2D8" = { }  # 26 instructions, pointer at 0x887564B4
+"0x8825FA18" = { }  # 26 instructions, pointer at 0x88756774
+"0x8825FBE0" = { }  # 26 instructions, pointer at 0x88756864
+"0x88260070" = { }  # 26 instructions, pointer at 0x88756A14
+"0x882602B8" = { }  # 26 instructions, pointer at 0x88756B04
+"0x88261638" = { }  # 26 instructions, pointer at 0x88757294
+"0x88261A38" = { }  # 26 instructions, pointer at 0x88757424
+"0x88264570" = { }  # 39 instructions, pointer at 0x887585D4
+"0x882CF520" = { }  # 23 instructions, pointer at 0x88632094
+"0x88354C38" = { }  # 13 instructions, pointer at 0x88784DD4
+"0x883773F0" = { }  # 13 instructions, pointer at 0x8878DDB4
+"0x8837AF50" = { }  # 11 instructions, pointer at 0x8878EF14
+"0x883A82C0" = { }  # 20 instructions, pointer at 0x887966E4 (+6 more)
+"0x8860A3D0" = { }  # 21 instructions, pointer at 0x886BE404 (+6 more)

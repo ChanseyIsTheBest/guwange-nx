@@ -172,6 +172,12 @@ namespace plume {
         case RenderFormat::BC7_UNORM: return DkImageFormat_RGBA_BC7_Unorm;
         case RenderFormat::BC7_UNORM_SRGB: return DkImageFormat_RGBA_BC7_Unorm_sRGB;
         case RenderFormat::S8_UINT: return DkImageFormat_S8;
+        // guwange-nx (2026-10-22): deko3d's format table (source/maxwell/format_traits.inc) makes RGB5A1 the TIC format
+        // A1B5G5R5 with swizzle R,G,B,A, RGB565 B5G6R5 with R,G,B,1 and RGBA4 A4B4G4R4 with R,G,B,A: red in the
+        // lowest bits (component 0 is the least significant, as RGBA8_Unorm's red is byte 0).
+        case RenderFormat::A1B5G5R5_UNORM: return DkImageFormat_RGB5A1_Unorm;
+        case RenderFormat::B5G6R5_UNORM: return DkImageFormat_RGB565_Unorm;
+        case RenderFormat::A4B4G4R4_UNORM: return DkImageFormat_RGBA4_Unorm;
         default: return DkImageFormat_None;
         }
     }

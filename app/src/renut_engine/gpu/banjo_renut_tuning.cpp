@@ -121,6 +121,11 @@ REXCVAR_DEFINE_BOOL(banjo_deko3d_alpha_spec, true, "Banjo/Enhancements",
                     "deko3d renderer (2026-10-18): the alpha test's function is part of the pipeline (specialization "
                     "constant 903 of the deko3d shaders): a draw without the alpha test has no compare and no discard "
                     "in its pixel shader, and the GPU tests depth before shading. Same pixels");
+REXCVAR_DEFINE_BOOL(banjo_deko3d_bound_fetch_spec, true, "Banjo/Enhancements",
+                    "deko3d renderer (guwange-nx, 2026-10-21): the declaration types of the inputs a vertex shader "
+                    "reads by another index than the vertex index are part of the pipeline (specialization constants "
+                    "920-935): each such fetch decodes its one format instead of every format (Guwange's instanced "
+                    "sprite shaders: 214 KB of GLSL, an 11.8 s compile at the first frame). Same pixels");
 REXCVAR_DEFINE_BOOL(banjo_deko3d_tess_spec, true, "Banjo/Enhancements",
                     "deko3d renderer (2026-10-18): a pipeline that is not a tessellated draw's gives its vertex shader "
                     "the patch kind 0 as specialization constant 904: the tessellation code goes. No new pipelines. "
@@ -1535,6 +1540,7 @@ void LatchTuning() {
   g_latched.depth_words_view = EnhancementActive(EnhancementGroup::kNonCpu, REXCVAR_GET(banjo_gpu_depth_words_view));
   g_latched.tess_spec = REXCVAR_GET(banjo_deko3d_tess_spec);
   g_latched.alpha_spec = REXCVAR_GET(banjo_deko3d_alpha_spec);
+  g_latched.bound_fetch_spec = EnhancementActive(EnhancementGroup::kNonCpu, REXCVAR_GET(banjo_deko3d_bound_fetch_spec));
   g_latched.draw_resolves = REXCVAR_GET(banjo_deko3d_draw_resolves);
   g_latched.resolve_skip = REXCVAR_GET(banjo_renut_resolve_skip);
   g_latched.depth_words_lazy = REXCVAR_GET(banjo_renut_depth_words_lazy);

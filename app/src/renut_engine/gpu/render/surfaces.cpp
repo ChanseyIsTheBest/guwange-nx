@@ -21,6 +21,12 @@
 #include "renut_engine/gpu/log.h"
 #include "renut_engine/gpu/backend/video.h"
 
+// guwange-nx (2026-10-21): a test of the emulator's multisampling (Guwange draws into 2x targets, which neither Futari
+// nor N&B's Ryujinx runs had: the first Guwange runs there stalled the emulated GPU after the first frame).
+REXCVAR_DEFINE_BOOL(banjo_renut_diag_single_sample, false, "Banjo/Renut",
+                    "Diagnostic: the game's multisampled render targets are made with one sample (the resolves then "
+                    "copy); for testing the emulator, not the look")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_STRING(renut_resolution, "720p", "Nuts&Bolts/Graphics",
                       "Internal render resolution, by its height: 480p, 720p (the game's own), "
                       "1080p, 1440p or 4K (2160 lines). Applies from the next frame.")
@@ -156,6 +162,9 @@ void RetireTarget(HostSurface &surface) {
 }
 
 plume::RenderSampleCounts SampleCount(u32 info_word) {
+  static const bool single = REXCVAR_GET(banjo_renut_diag_single_sample);
+  if (single)
+    return plume::RenderSampleCount::COUNT_1;
   switch ((info_word >> 16) & 3) {
   case 1:
     return plume::RenderSampleCount::COUNT_2;

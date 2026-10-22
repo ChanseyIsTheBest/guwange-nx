@@ -346,7 +346,7 @@ std::unique_ptr<plume::RenderPipeline> Build(const PipelineKey &key, const Pipel
 
   // banjo-nx (banjo_gpu_bool_spec): the key's bools as the shaders' specialization constants (banjo_bool_spec.h). One
   // list for every stage: a stage takes the ids it declares (vertex and pixel shader bools have distinct ones).
-  plume::RenderSpecConstant spec[272];  // 256 bools and 900-908
+  plume::RenderSpecConstant spec[288];  // 256 bools, 900-913 and the bound fetch types 920-935
   uint32_t spec_count = 0;
   for (uint32_t w = 0; w < 8; ++w) {
     for (uint32_t m = key.bool_mask[w]; m; m &= m - 1) {
@@ -404,6 +404,12 @@ std::unique_ptr<plume::RenderPipeline> Build(const PipelineKey &key, const Pipel
   // (key.reserved bit 2: the off half of the in-run A/B, banjo_renut_ab_target 17.)
   if (banjo::renut_gpu::SkinOnceOn() && !(key.reserved & 4u))
     spec[spec_count++] = plume::RenderSpecConstant(913, 1);
+  // guwange-nx (2026-10-21, banjo_deko3d_bound_fetch_spec): the vertex shader's bound fetch types (+1), constants
+  // 920 + i of the deko3d GLSL (tools/deko3d_glsl_opt.py, pass boundfmt). Only shaders with such fetches declare them.
+  for (uint32_t i = 0; i < 16; ++i) {
+    if (key.bound_types[i])
+      spec[spec_count++] = plume::RenderSpecConstant(920 + i, key.bound_types[i]);
+  }
   desc.specConstants = spec_count ? spec : nullptr;
   desc.specConstantsCount = spec_count;
   if (REXCVAR_GET(banjo_deko3d_variant_log)) {
@@ -589,6 +595,8 @@ bool DecodeRecord(const char *data, size_t size, Job &job) {
     job.key.output_trim = 0;
   if (!banjo::renut_gpu::AlphaSpecOn())
     job.key.alpha_func = 0;
+  if (!banjo::renut_gpu::BoundFetchSpecOn())  // guwange-nx (banjo_deko3d_bound_fetch_spec)
+    std::memset(job.key.bound_types, 0, sizeof(job.key.bound_types));
   if (!banjo::renut_gpu::BoolSpecOn()) {
     std::memset(job.key.bool_mask, 0, sizeof(job.key.bool_mask));
     std::memset(job.key.bool_values, 0, sizeof(job.key.bool_values));

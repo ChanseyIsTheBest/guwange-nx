@@ -160,7 +160,14 @@ std::atomic<u32> g_num_hitches{0};
 Sample g_samples[kMaxSamples];
 size_t g_sample_count = 0;
 
-std::atomic<u64> g_counters[kCounterCount];
+// guwange-nx (2026-10-22, CPU round): one counter per cache line. The game threads count different things at the same
+// time (the drawing thread its clock reads, the emulation thread its critical sections), and eight counters to a line
+// made every count a cache-line transfer between the cores.
+struct alignas(64) PaddedCounter : std::atomic<u64> {};
+PaddedCounter g_counters[kCounterCount];
+// Whether the counters other than 0 (presents: the overlay's FPS) count: until the profiler thread knows, yes; then
+// only with a report (the title's switch_perf_counters_report_only, read by name; an unknown name means yes).
+std::atomic<bool> g_counting{true};
 
 /*
  * Wrapped libnx calls (see the file header): how many, how much time inside and, where it makes
@@ -1024,6 +1031,8 @@ void ProfilerMain(void*) {
   // overlay's FPS and resolution keep going.
   const bool report = rex::cvar::GetFlagByName("switch_profile_report") != "false";
   if (!report) sample_stacks = false;
+  g_counting.store(report || rex::cvar::GetFlagByName("switch_perf_counters_report_only") == "false",
+                   std::memory_order_relaxed);
 
   u64 counters_last[kCounterCount]{};
   for (unsigned i = 0; i < kCounterCount; ++i) {
@@ -1292,7 +1301,7 @@ void RexSwitchPerfCount(unsigned id) {
  * 21 clipped audio samples, 22 audio buffers with a peak of 0.98 or more.
  */
 void RexSwitchPerfAdd(unsigned id, u64 value) {
-  if (id < kCounterCount) {
+  if (id < kCounterCount && (id == 0 || g_counting.load(std::memory_order_relaxed))) {
     g_counters[id].fetch_add(value, std::memory_order_relaxed);
   }
 }

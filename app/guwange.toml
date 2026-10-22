@@ -1,0 +1,15 @@
+# Settings read at startup (ReXGlue cvars). The build copies this file next to the executable when there is none
+# there yet; edit the copy. Any cvar can also be given on the command line (--name=value) or as REX_<NAME>.
+
+# GPU: stage 1 draws with ReXGlue's emulated Xenos GPU (D3D12 on Windows): the PC reference.
+gpu_plugin = "xenos"
+# Guwange binds its textures through fetch constants whose type field is 0, not 2: without this the emulated GPU
+# skips them and the whole picture is black. (Set here: the GPU plugin registers the key after the app's defaults.)
+gpu_allow_invalid_fetch_constants = true
+
+log_level = "info"
+
+# Development defaults: launch muted and minimized (in the taskbar, no fullscreen, no focus), so test runs do not
+# take over the desktop or the speakers. Set both to false to play.
+audio_mute = true
+window_start_minimized = true

@@ -13,6 +13,8 @@
 
 #include <xxhash.h>
 
+#include <rex/cvar.h>
+
 #include "renut_engine/gpu/banjo_renut_tuning.h"
 
 #include "renut_engine/gpu/backend/backend.h"
@@ -25,6 +27,12 @@
 #include "renut_engine/gpu/render/draw.h"
 #include "renut_engine/gpu/render/graphics_options.h"
 #include "renut_engine/gpu/backend/video.h"
+
+// guwange-nx (2026-10-21): the samplers D3D unset but whose fetch constant still describes a texture.
+REXCVAR_DEFINE_BOOL(banjo_renut_null_texture_fetch, true, "Banjo/Renut",
+                    "A sampler whose texture the game unset (SetTexture NULL) while its fetch constant still describes "
+                    "one samples that texture, as the GPU does (Guwange's D3DX passes unset the samplers the game set "
+                    "directly); false = the null texture");
 
 namespace renut::gpu {
 
@@ -383,6 +391,14 @@ void ReadLevel(const TextureFormatInfo &info, const TextureFetch &fetch, const L
       } else {
         const size_t offset = (size_t(sz) * src.height_blocks + sy) * src.pitch_blocks * gbpb +
                               size_t(src.x_blocks) * gbpb;
+        // guwange-nx (banjo_renut_neon_texels): a 16-bit row read, swapped and converted in one pass; a Copy row
+        // (banjo_renut_native_16bit_textures' frame buffer among them) read and swapped in one.
+        uint8_t *out = dst + size_t(z) * dst_slice_pitch + size_t(y) * dst_row_pitch;
+        if (!info.decoded_blocks && ConvertTexelsFromGuest(info.conversion, endian, src.base + offset, out, blocks_w))
+          continue;
+        if (info.conversion == TexelConversion::Copy && gbpb == hbpb &&
+            CopyRowFromGuest(endian, src.base + offset, out, row.size()))
+          continue;
         std::memcpy(row.data(), src.base + offset, row.size());
       }
       SwapEndian(endian, row.data(), row.data(), row.size());
@@ -529,6 +545,10 @@ bool Create(HostTexture &t, const TextureFetch &fetch, bool render_target,
   t.dimension = HostDimension(fetch);
   t.guest_format = fetch.Format();
   t.info = GetTextureFormatInfo(fetch.Format(), AllSigned(fetch));
+  // guwange-nx (banjo_renut_native_16bit_textures): a linear 16-bit texture keeps its texels' own format on deko3d. Not
+  // a render target (a resolve destination keeps its target's format; ResolveTarget makes a new one when they differ).
+  if (!render_target && !fetch.Tiled())
+    t.info = NativeLinear16BitInfo(t.info);
   t.width = width;
   t.height = height;
   t.depth = depth;
@@ -1090,12 +1110,23 @@ TextureBinding BindTextureLocked(u32 texture_va, const TextureFetch &device_fetc
   TextureBinding binding;
   binding.dimension = HostDimension(device_fetch);
   binding.slot = NullSlot(binding.dimension);
-  if (!texture_va)
+  // guwange-nx (2026-10-21, banjo_renut_null_texture_fetch): D3DDevice_SetTexture(NULL) clears the device's texture
+  // word and leaves the fetch constant alone, and the GPU samples whatever that describes. Guwange binds its textures
+  // directly, then its D3DX pass sets every sampler's texture to NULL before the draw (about 3,000 a second): bound by
+  // the texture word, every sprite and layer sampled nothing (the first PC boot with Renut: all black). Such a sampler
+  // gets a host texture of its own, keyed by the fetch constant (an odd key: no header is), or the resolve
+  // destination it aliases.
+  if (!texture_va) {
+    static const bool by_fetch = REXCVAR_GET(banjo_renut_null_texture_fetch);
+    if (!by_fetch || !device_fetch.IsTexture() || !device_fetch.BasePage())
+      return binding;
+    texture_va = (device_fetch.BasePage() << 12) | ((device_fetch.dword[1] & 0x3Fu) << 6) |
+                 ((device_fetch.dword[2] ^ (device_fetch.dword[2] >> 13)) & 0x3Eu) | 1u;
+  }
+  const auto *header = (texture_va & 1u) ? nullptr : GuestPtr<const d3d::BaseTexture>(texture_va);
+  if (!header && !(texture_va & 1u))
     return binding;
-  const auto *header = GuestPtr<const d3d::BaseTexture>(texture_va);
-  if (!header)
-    return binding;
-  TextureFetch fetch = TextureFetch::FromHeader(header->Format);
+  TextureFetch fetch = header ? TextureFetch::FromHeader(header->Format) : device_fetch;
   // SetTexture copied the header into the device's fetch constant. A header
   // that no longer matches it was a temporary the game has overwritten since
   // (a command buffer runs after its recording thread's stack moved on); the

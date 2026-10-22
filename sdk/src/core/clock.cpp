@@ -140,6 +140,13 @@ REXCVAR_DEFINE_BOOL(clock_nonblocking, true, "Clock",
                     "middle of an update returns that thread's published count (equivalent to waiting for it "
                     "and reading the same value, without the wait). false = the original blocking path");
 
+REXCVAR_DEFINE_BOOL(clock_lockfree, true, "Clock",
+                    "UpdateGuestClock without the clock mutex: the guest count is computed from an epoch (the host "
+                    "and guest counts when the tick ratio last changed) and published with an atomic maximum, so it "
+                    "never runs backwards across threads. With a 1:1 ratio (the default) the counts are the mutex "
+                    "path's; with another ratio this path no longer loses each call's rounding. false = the mutex "
+                    "path (clock_nonblocking)");
+
 namespace rex::chrono {
 
 // Time scalar applied to all time operations.
@@ -160,6 +167,61 @@ uint64_t last_host_tick_count_ = Clock::QueryHostTickCount();
 // Mutex to ensure last_host_tick_count_ and last_guest_tick_count_ are in sync
 std::mutex tick_mutex_;
 
+namespace {
+// clock_lockfree (guwange-nx's CPU round, 2026-10-22: the console profile had Guwange's drawing thread polling the
+// timebase 930,000 times a second, a mutex try-lock and unlock each, ~11 % of that thread): the guest count as a
+// function of the host count since the epoch, the counts when the ratio last changed. An epoch is never changed once
+// published (a new one replaces it; the old ones are kept, a few bytes per ratio change).
+struct Epoch {
+  uint64_t host;
+  uint64_t guest;
+  uint64_t num;
+  uint64_t den;
+};
+std::atomic<const Epoch*> g_epoch{nullptr};
+
+uint64_t EpochCount(const Epoch& e, uint64_t host) {
+  const uint64_t d = host > e.host ? host - e.host : 0;
+  if (e.num == e.den) {
+    return e.guest + d;
+  }
+  if (d <= std::numeric_limits<uint64_t>::max() / e.num) {
+    return e.guest + d * e.num / e.den;
+  }
+  // The same floor without 128-bit arithmetic (no __udivti3 with clang on Windows): d = q * den + r, so
+  // d * num / den = q * num + r * num / den (r < den; the ratio is a reduced fraction of two clock frequencies).
+  const uint64_t q = d / e.den, r = d % e.den;
+  return e.guest + q * e.num + r * e.num / e.den;
+}
+
+// The first epoch: the start of the clock (last_host_tick_count_'s first value, guest count 0), as the mutex path.
+const Epoch* CurrentEpoch() {
+  const Epoch* e = g_epoch.load(std::memory_order_acquire);
+  if (e) [[likely]] {
+    return e;
+  }
+  std::lock_guard<std::mutex> lock(tick_mutex_);
+  e = g_epoch.load(std::memory_order_acquire);
+  if (!e) {
+    e = new Epoch{last_host_tick_count_, 0, guest_tick_ratio_.first, guest_tick_ratio_.second};
+    g_epoch.store(e, std::memory_order_release);
+  }
+  return e;
+}
+
+uint64_t UpdateGuestClockLockFree(uint64_t host_tick_count) {
+  const uint64_t count = EpochCount(*CurrentEpoch(), host_tick_count);
+  uint64_t last = last_guest_tick_count_.load(std::memory_order_relaxed);
+  while (count > last) {
+    if (last_guest_tick_count_.compare_exchange_weak(last, count, std::memory_order_release,
+                                                     std::memory_order_relaxed)) {
+      return count;
+    }
+  }
+  return last;  // another thread published a later count (it read the host clock after this one did)
+}
+}  // namespace
+
 void RecomputeGuestTickScalar() {
   // Create a rational number with numerator (first) and denominator (second)
   auto frac = std::make_pair(guest_tick_frequency_, Clock::QueryHostTickFrequency());
@@ -175,8 +237,15 @@ void RecomputeGuestTickScalar() {
   // Keep this a rational calculation and reduce the fraction
   reduce_fraction(frac);
 
+  // The lock-free path's epoch moves to now, at the count the old ratio reached (before the lock: CurrentEpoch may
+  // take it to make the first epoch).
+  const Epoch* old_epoch = CurrentEpoch();
   std::lock_guard<std::mutex> lock(tick_mutex_);
   guest_tick_ratio_ = frac;
+  const uint64_t host = Clock::QueryHostTickCount();
+  const uint64_t guest =
+      std::max(EpochCount(*old_epoch, host), last_guest_tick_count_.load(std::memory_order_acquire));
+  g_epoch.store(new Epoch{host, guest, frac.first, frac.second}, std::memory_order_release);
 }
 
 // Update the guest timer for all threads.
@@ -190,6 +259,9 @@ uint64_t UpdateGuestClock() {
   }
 
   REX_SYS_COUNT(rex::syscount::kClockCall, 1);
+  if (REXCVAR_GET(clock_lockfree)) [[likely]] {
+    return UpdateGuestClockLockFree(host_tick_count);
+  }
   std::unique_lock<std::mutex> lock(tick_mutex_, std::defer_lock);
   if (lock.try_lock()) {
     // Translate host tick count to guest tick count.

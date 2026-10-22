@@ -17,6 +17,7 @@
 #include <rex/hook.h>
 #include <rex/types.h>
 #include <rex/system/kernel_state.h>
+#include <rex/system/xthread.h>
 #include <rex/system/xtypes.h>
 
 namespace rex::kernel::xboxkrnl {
@@ -28,10 +29,13 @@ void HalReturnToFirmware_entry(u32 routine) {
   // Routine must be 1 'HalRebootRoutine'
   assert_true(routine == 1);
 
-  // TODO(benvank): diediedie much more gracefully
-  // Not sure how to blast back up the stack in LLVM without exceptions, though.
+  // guwange-nx (2026-10-22): the title ends as XamLoaderLaunchTitle / XamLoaderTerminateTitle end it (its guest
+  // threads leave at their next kernel call, then the app quits through its normal exit). exit(0) here returned a Switch
+  // NRO to hbloader with the game's guest, GPU and audio threads still running (peggle-nx's finding: hbmenu then
+  // crashes on heap pages they alias); the app's exit asks the system to end the process.
   REXKRNL_ERROR("Game requested shutdown via HalReturnToFirmware");
-  exit(0);
+  REX_KERNEL_STATE()->TerminateTitle();
+  rex::system::XThread::CheckTitleTermination();  // this thread leaves too (does not return)
 }
 
 }  // namespace rex::kernel::xboxkrnl

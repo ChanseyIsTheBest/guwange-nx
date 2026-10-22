@@ -43,9 +43,15 @@ def first_instructions(gen):
     return out
 
 
+BL = re.compile(r'^0x([0-9a-fA-F]{8})$')
+
+
 def call_sites(gen):
     """callee -> Counter of the guest instructions setting r4 in the straight line before the call (with r5 set by
-    an `li r5,N` there too)."""
+    an `li r5,N` there too). guwange-nx (2026-10-22): a call is its guest `bl` (the codegen's comment line), not the
+    C++ call statement under it: tools/inline_memcalls.py replaces the statements of the constant-size calls with
+    inline copies, and a second run of the steps then found no memcpy in a game core (198 of its 201 calls were
+    inline). The comments stay through every step."""
     out = collections.defaultdict(collections.Counter)
     for path in sorted(glob.glob(os.path.join(gen, '*_recomp.*.cpp'))):
         recent = []
@@ -56,14 +62,14 @@ def call_sites(gen):
                 continue
             c = COMMENT.match(line)
             if c:
-                recent = (recent + [(c.group(1), c.group(2).strip())])[-6:]
-                continue
-            m = CALL.match(line)
-            if m and recent and recent[-1][0] == 'bl':
-                r5 = any(mn == 'li' and ops.startswith('r5,') for mn, ops in recent[:-1])
-                r4 = next((mn + ' ' + ops for mn, ops in reversed(recent[:-1]) if ops.startswith('r4,')), None)
-                if r5:
-                    out[m.group(1)][r4 or '-'] += 1
+                mnemonic, ops = c.group(1), c.group(2).strip()
+                b = BL.match(ops) if mnemonic == 'bl' else None
+                if b:
+                    r5 = any(mn == 'li' and o.startswith('r5,') for mn, o in recent)
+                    r4 = next((mn + ' ' + o for mn, o in reversed(recent) if o.startswith('r4,')), None)
+                    if r5:
+                        out['sub_' + b.group(1).upper()][r4 or '-'] += 1
+                recent = (recent + [(mnemonic, ops)])[-6:]
     return out
 
 

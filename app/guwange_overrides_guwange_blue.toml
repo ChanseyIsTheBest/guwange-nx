@@ -1,0 +1,26 @@
+# Analysis corrections for the game core module/Guwange_blue_x360.dll (with its Title Update #1 patch). Every entry needs
+# its evidence.
+
+[functions]
+# The byte tail of the CRT's copy routine (andi. r0,r5,3; mtctr r0; beqlr; lbz/stb; bdnz; blr), reached by a `b` the
+# automatic discovery had not assigned to a function ("target not in any function"; found in every core by its words,
+# 2026-10-21, after Guwange01's and the co-op core's validation runs). The caller is listed.
+"0x88611CEC" = { }  # from 0x88611D3C
+
+# Code pointers into unclaimed gaps, stored in data (vtables, callback tables) or built in code (lis/addi:
+# callbacks passed at run time), accepted by tools/pointer_fixpoint.py pass 1: the scratch listing fits
+# in the gap (or continues only into a registered function it branches to: "then the registered tail"),
+# ends in a terminator and reads no register that is undefined at a function entry. The comment says
+# where the pointer is stored ("pointer at") or built ("built at", inside the code range).
+"0x8803C8F8" = { }  # 11 instructions, pointer at 0x886B75A4
+"0x8803C970" = { }  # 14 instructions, pointer at 0x886B7654 (+3 more)
+"0x880E05C8" = { }  # 18 instructions, pointer at 0x886E2804
+"0x88139A58" = { }  # 14 instructions, pointer at 0x886F5454
+"0x88236568" = { }  # 26 instructions, pointer at 0x8874BED4
+"0x882C7D68" = { }  # 23 instructions, pointer at 0x88622084
+"0x882CA360" = { }  # 19 instructions, pointer at 0x88621EC4 (+5 more)
+"0x8834AAC8" = { }  # 13 instructions, pointer at 0x88786444
+"0x88370DD8" = { }  # 11 instructions, pointer at 0x88790A24
+"0x88390618" = { }  # 15 instructions, pointer at 0x887964E4 (+2 more)
+"0x883932A8" = { }  # 11 instructions, pointer at 0x88797364
+"0x885FA270" = { }  # 17 instructions, pointer at 0x88626644 (+6 more)

@@ -1,0 +1,131 @@
+# Guwange for the Switch: the fixed settings, compiled into the NRO (app/CMakeLists.txt, src/guwange_app.h
+# BuiltInConfig) and applied before the SD card's guwange.toml, which holds the player's options (app/guwange_switch.toml)
+# and may still override any key here for testing (app/configs).
+# Written by tools/make_guwange_configs.py from app/src/guwange_enhancements.cpp: edit the table there, not this file.
+# Logging and profiling are off: no logs/ folder on the SD card.
+
+# Game. The renderer: Renut's Direct3D-level renderer on deko3d (no PM4 ring, no EDRAM model). The NRO links no Vulkan
+# driver: deko3d only.
+futari_renderer = "renut"
+renut_gpu_backend = "deko3d"
+gpu_allow_invalid_fetch_constants = true
+license_mask = 1
+
+# No logging, no profiling
+log_level = "off"
+log_to_file = false
+switch_profile_stacks = false
+switch_profile_report = false
+renut_memory_report = 0
+audio_pop_detect = false
+
+# Enhancement masters (false turns every enhancement of that group off)
+guwange_cpu_enhancements = true
+guwange_noncpu_enhancements = true
+
+# CPU enhancements
+futari_vblank_sleep_exact = true
+thread_wait_blocking = true
+clock_nonblocking = true
+clock_lockfree = true
+guwange_native_memcpy = true
+guwange_native_memset = true
+guwange_native_tilemap = true
+guwange_native_sprites = true
+banjo_renut_neon_texels = true
+banjo_renut_fused_texel_rows = true
+banjo_renut_native_16bit_textures = true
+futari_late_input = true
+switch_perf_counters_report_only = true
+global_lock_spin = 48
+guwange_cpu_guest_cas_no_barrier = true
+kernel_critsec_pcr_owner = true
+thread_signal_skip_idle = true
+banjo_deko3d_push_constants = true
+banjo_deko3d_ring_cleaner = true
+banjo_renut_capture_pool = true
+banjo_renut_snapshot_deltas = true
+futari_renut_deferred_chain = true
+banjo_renut_snapshot_deltas_constants = true
+banjo_renut_snapshot_deltas_narrow = true
+banjo_renut_neon_compare = true
+banjo_renut_capture_batches = true
+banjo_renut_callbacks_fast = true
+banjo_renut_prefetch_next = true
+banjo_renut_done_notify_waiters = true
+banjo_renut_batch_clock = true
+banjo_renut_chain_reuse = true
+banjo_renut_chain_reuse_replays = true
+banjo_renut_inline_line_compare = true
+banjo_renut_fetch_slots_skip = true
+banjo_renut_shared_partial_clear = true
+banjo_renut_fetch_data_unread = true
+banjo_renut_stream_mask = true
+banjo_renut_texture_defaults_copy = true
+banjo_renut_lean_diagnostics = true
+banjo_renut_core_layout = true
+guwange_core_layout_drawing = true
+banjo_renut_wake_batch = 16
+banjo_renut_cpu_memos = true
+banjo_renut_pipeline_memo = true
+banjo_renut_shared_dedupe = true
+banjo_renut_queue_notify_idle = true
+banjo_renut_record_worker = true
+banjo_renut_pmull_hash = true
+banjo_renut_neon_swap = true
+banjo_renut_upload_cached = true
+banjo_ring_core = 1
+banjo_background_compile_core = 2
+banjo_renut_record_worker_core = 0
+masseffect_native_nvk_emission = true
+masseffect_native_nvk_cbufs = true
+masseffect_native_nvk_dynamic = true
+masseffect_native_nvk_preload = true
+masseffect_native_set4_differences = true
+
+# Non-CPU enhancements
+guwange_handheld_gpu_boost = true
+audio_switch_declick = false
+audio_switch_declick_smooth = false
+audio_switch_declick_predict = false
+futari_late_input = true
+futari_vblank_display_sync = true
+futari_vblank_phase_auto = true
+futari_renut_vblank_core = 2
+banjo_deko3d_alpha_spec = true
+banjo_deko3d_bound_fetch_spec = true
+banjo_deko3d_tess_spec = true
+banjo_deko3d_early_hoist = true
+banjo_deko3d_early_z = true
+banjo_deko3d_txq_constants = true
+banjo_deko3d_vs_outputs = true
+banjo_deko3d_uam_prmt = true
+banjo_deko3d_uam_gvn = true
+banjo_deko3d_uam_uniform_branches = true
+banjo_deko3d_zcull = true
+banjo_deko3d_depth_compression = true
+banjo_deko3d_depth24 = true
+banjo_deko3d_depth_handover = true
+banjo_deko3d_draw_resolves = true
+banjo_deko3d_barrier_lean = true
+banjo_deko3d_barrier_merge = true
+banjo_gpu_depth_only = true
+banjo_gpu_depth_words_view = true
+banjo_gpu_output_trim = true
+banjo_gpu_bool_spec = true
+banjo_gpu_tess_grid = true
+banjo_gpu_robustness_off = true
+banjo_gpu_nvk_draw_contract = true
+banjo_gpu_blend_skip = true
+banjo_renut_precise_barriers = true
+banjo_renut_push_point_only = true
+banjo_renut_resolve_skip = true
+banjo_renut_depth_words_lazy = true
+banjo_renut_memory_policy = true
+banjo_renut_pipeline_cache = true
+banjo_renut_cache_save_quiet = true
+banjo_renut_linked_stages = true
+banjo_deko3d_kick_submit = true
+banjo_deko3d_eager_kicks = true
+banjo_late_input = true
+futari_renut_double_buffer = true

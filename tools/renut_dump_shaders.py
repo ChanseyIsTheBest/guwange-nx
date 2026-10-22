@@ -43,8 +43,8 @@ except ImportError:
     sys.exit("error: the 'xxhash' module is required (pip install xxhash)")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODULES = ("default", "palm_normal", "palm_abnormal", "reco_normal", "reco_abnormal",
-           "hirow_normal", "hirow_abnormal", "kiniro_normal", "kiniro_abnormal")
+# guwange-nx (2026-10-21): Guwange's five binaries (out/<module>_image.bin as tools/codegen.ps1 names the dumps).
+MODULES = ("default", "Guwange01_x360", "Guwange01_coop_x360", "Guwange_arrange_x360", "Guwange_blue_x360")
 EXPECTED_BASE = {"default": 0x82000000}  # the game cores: 0x88000000
 CORE_BASE = 0x88000000
 
@@ -201,7 +201,7 @@ def main():
                     help="output directory (default: %(default)s)")
     ap.add_argument("--ucode", action="store_true",
                     help="also write <name>.ucode (physical block only)")
-    ap.add_argument("modules", nargs="*", help="modules to scan (default: all nine: %s)" % ", ".join(MODULES))
+    ap.add_argument("modules", nargs="*", help="modules to scan (default: all: %s)" % ", ".join(MODULES))
     args = ap.parse_args()
 
     modules = args.modules or list(MODULES)

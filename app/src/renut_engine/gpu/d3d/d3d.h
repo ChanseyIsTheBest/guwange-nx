@@ -7,6 +7,7 @@
  * the renderer reads or maintains are named.
  */
 // futari-nx: device offsets translated to Futari's XDK (tools/renut_futari_layout.py)
+// guwange-nx: device offsets translated to Guwange's XDK (tools/renut_guwange_layout.py)
 #pragma once
 
 #include <cstddef>
@@ -294,7 +295,7 @@ constexpr u32 kDeviceOffsetMinTessellationLevel = 0x2980;
 // predicated tiling (Z and render).
 constexpr u32 kDeviceOffsetPredication = 0x3254;
 // D3DCommandBuffer being recorded (BeginCommandBuffer sets, End clears).
-constexpr u32 kDeviceOffsetCommandBuffer = 13724;
+constexpr u32 kDeviceOffsetCommandBuffer = 13728;
 // The leading part of the device the draw, clear and resolve paths read (up
 // to and including kDeviceOffsetPredication); a copy of it stands in for the
 // device when a recorded command buffer is replayed.
@@ -304,10 +305,10 @@ static_assert(kDeviceOffsetPredication + 4 <= kDeviceSnapshotSize);
 // m_pRing the inline end of BeginVertices / BeginIndexedVertices restores.
 constexpr u32 kDeviceOffsetVerticesRingEnd = 0x3554;
 // Swap bookkeeping (D3DDevice_Swap 0x82287590).
-constexpr u32 kDeviceOffsetSwapCount = 0x4180;
+constexpr u32 kDeviceOffsetSwapCount = 0x4184;
 constexpr u32 kDeviceOffsetFenceTag = 0x2A9C;         // current fence tag
 constexpr u32 kDeviceOffsetSwapFenceTag = 0x2AB0;     // fence tag at the last Swap
-constexpr u32 kDeviceOffsetPresentFenceTag = 0x3B2C;  // fence tag of the last presented frame
+constexpr u32 kDeviceOffsetPresentFenceTag = 0x3B30;  // fence tag of the last presented frame
 constexpr u32 kDeviceOffsetSwapFlags = 0x2ABD;
 constexpr u8 kSwapFlagPending = 0x10;
 

@@ -11,6 +11,8 @@
 
 #include <rex/rex_app.h>
 
+#include <atomic>
+
 #include <cstdlib>
 
 #include <rex/assert.h>
@@ -539,7 +541,11 @@ void ReXApp::LaunchModule() {
       OnGuestThreadExit(main_thread.get());
       REXLOG_INFO("Execution complete");
       if (!shutting_down_.load(std::memory_order_acquire)) {
-        app_context().CallInUIThread([this]() { app_context().QuitFromUIThread(); });
+        // guwange-nx (2026-10-22): the title ended by itself ("Return to Game Library": XamLoaderLaunchTitle ->
+        // TerminateTitle). Hard-exit as a closed window does (OnClosing): the runtime's teardown freed guest memory
+        // under a guest thread TerminateTitle had left running (a busy loop that never waits in the kernel, so never
+        // sees the termination) and crashed. The main thread here is gone; what is left dies with the process.
+        HardExitProcess();
       }
     });
   });
@@ -568,10 +574,23 @@ void ReXApp::OnClosing(ui::UIEvent& e) {
   if (runtime_ && runtime_->kernel_state()) {
     runtime_->kernel_state()->TerminateTitle();
   }
-  // Hard-exit rather than run subsystem teardown, which can deadlock on a host
-  // lock still held by a straggler TerminateTitle left running. Flush (not
-  // ShutdownLogging, which frees loggers a straggler may still use); the OS
-  // reclaims the rest.
+  HardExitProcess();
+}
+
+// Hard-exit rather than run subsystem teardown, which can deadlock on a host
+// lock still held by a straggler TerminateTitle left running (or touch guest
+// memory the teardown freed under it). Flush (not ShutdownLogging, which frees
+// loggers a straggler may still use); the OS reclaims the rest.
+namespace {
+std::atomic<void (*)()> g_before_hard_exit{nullptr};
+}  // namespace
+
+void ReXApp::SetBeforeHardExit(void (*fn)()) {
+  g_before_hard_exit.store(fn, std::memory_order_release);
+}
+
+void ReXApp::HardExitProcess() {
+  if (auto* const before = g_before_hard_exit.exchange(nullptr, std::memory_order_acq_rel)) before();
   REXLOG_INFO("Title terminated; hard-exiting process.");
   rex::FlushLogging();
 #if REX_PLATFORM_SWITCH
@@ -680,8 +699,12 @@ void ReXApp::OnDestroy() {
     window_->RemoveInputListener(this);
     window_->RemoveListener(this);
   }
-  window_.reset();
+  // guwange-nx (2026-10-22, peggle1-nx's fix of 2026-10-21): the runtime first, while the window is still alive. The
+  // runtime's keyboard/mouse input driver detaches from the window in its destructor (MnkInputDriver::DetachFromWindow);
+  // with the window gone first that threw std::system_error out of a destructor, and every exit ended in
+  // std::terminate.
   runtime_.reset();
+  window_.reset();
 }
 
 void ReXApp::SetGuestFrameStats(ui::DebugOverlayDialog::FrameStatsProvider provider) {

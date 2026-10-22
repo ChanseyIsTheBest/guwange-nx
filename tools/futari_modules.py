@@ -21,8 +21,12 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, 'app')
 GEN = os.path.join(APP, 'generated')
-TREES = ('default', 'palm_normal', 'palm_abnormal', 'reco_normal', 'reco_abnormal', 'hirow_normal', 'hirow_abnormal',
-         'kiniro_normal', 'kiniro_abnormal')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import project  # noqa: E402  (guwange-nx, 2026-10-22: the port's modules, from its manifest)
+
+TREES = project.trees()
+# Futari's own native replacements (memcpy / memset, the localized hot copies): only in futari-nx's build.
+FUTARI_NATIVES = project.name() == 'futari'
 
 
 def tree_of(gen):
@@ -34,17 +38,12 @@ def tree_of(gen):
 
 
 def image_path(tree):
-    return os.path.join(ROOT, 'out', '%s_image.bin' % tree)
+    return project.image_path(tree)
 
 
 def xex_files():
-    """tree -> the module's XEX file, from app/futari_manifest.toml (file_path / out_directory_path pairs)."""
-    text = open(os.path.join(APP, 'futari_manifest.toml'), encoding='utf-8').read()
-    out = {}
-    for m in re.finditer(r'^file_path\s*=\s*"([^"]+)"\s*\n(?:[^\n\[]*\n)*?out_directory_path\s*=\s*"generated/(\w+)"',
-                         text, re.M):
-        out[m.group(2)] = os.path.normpath(os.path.join(APP, m.group(1)))
-    return out
+    """tree -> the module's XEX file, from the port's manifest (tools/project.py)."""
+    return project.xex_files()
 
 
 def xex_path(tree):
@@ -76,6 +75,35 @@ def pe_header(img):
     return base, (base + entry_rva) if entry_rva else None, sections, export_dir
 
 
+def _export_table(img, at, base, starts):
+    """The function addresses of the xex2_export_table at image offset `at` (magic 48 00 00, modulenumber[2],
+    version[3], imagebaseaddr, count, base, ordOffset[count]), or None when it is not one: wrong magic, an empty or
+    implausible count, or an entry that is not a function of the module."""
+    if at < 0 or at + 44 > len(img) or img[at:at + 3] != b'\x48\x00\x00':
+        return None
+    imagebase, n = struct.unpack_from('>II', img, at + 32)
+    if not 0 < n <= 4096 or at + 44 + 4 * n > len(img):
+        return None
+    addrs = [(struct.unpack_from('>I', img, at + 44 + 4 * k)[0] + (imagebase << 16)) & 0xFFFFFFFF for k in range(n)]
+    if not all(a in starts for a in addrs):
+        return None
+    return addrs
+
+
+def _find_export_table(img, base, starts):
+    """The image offset of the one valid export table in the image (see _export_table), or None."""
+    found = []
+    i = img.find(b'\x48\x00\x00')
+    while i >= 0:
+        if i % 4 == 0 and _export_table(img, i, base, starts) is not None:
+            found.append(i)
+        i = img.find(b'\x48\x00\x00', i + 1)
+    if len(found) > 1:
+        sys.exit('futari_modules: %d export tables in the image (0x%s): which one is the module\'s?' % (
+            len(found), ', 0x'.join('%08X' % (base + f) for f in found)))
+    return found[0] if found else None
+
+
 def outside_entries(tree, starts):
     """{function address: reason} of the functions this module's own code does not call but its loader or another
     module does: the entry point, the XEX header's entry point, and the exports (both tables, read both ways round
@@ -98,14 +126,15 @@ def outside_entries(tree, starts):
             # section_digest[20], import_table_count, import_table_digest[20], xgd2_media_id[16], aes_key[16],
             # export_table (a guest address inside the image).
             export_table = struct.unpack_from('>I', d, security + 4 + 4 + 256 + 4 + 4 + 4 + 20 + 4 + 20 + 16 + 16)[0]
-            if export_table and base <= export_table < base + len(img):
-                at = export_table - base
-                # xex2_export_table: magic[3], modulenumber[2], version[3], imagebaseaddr, count, base, ordOffset[]
-                imagebase, n = struct.unpack_from('>II', img, at + 32)
-                for k in range(min(n, 4096)):
-                    a = (struct.unpack_from('>I', img, at + 44 + 4 * k)[0] + (imagebase << 16)) & 0xFFFFFFFF
-                    if a in starts:
-                        out[a] = 'export'
+            at = export_table - base if export_table and base <= export_table < base + len(img) else None
+            # guwange-nx (2026-10-22): the header read here is the file's own, but a title update patches the header
+            # too (the SDK applies the sibling .xexp / .dllp at load): in three of Guwange's four cores the patched
+            # image has the table 0x80 bytes further on, and the file's address holds code (a bctr). A table that is
+            # not one at that address is looked for in the image: the export table's magic and every entry a function.
+            if at is None or _export_table(img, at, base, starts) is None:
+                at = _find_export_table(img, base, starts)
+            for a in (_export_table(img, at, base, starts) or []) if at is not None else []:
+                out[a] = 'export'
     if exp_rva and exp_size and exp_rva + 40 <= len(img):
         for order in ('<', '>'):
             # IMAGE_EXPORT_DIRECTORY: NumberOfFunctions at +20, AddressOfFunctions at +28.
@@ -134,7 +163,11 @@ def crt_natives(gen):
     native replacements (app/src/native/futari_native_crt.h), which read r3, r4, r5 and the bytes the originals read
     and write the bytes the originals write: for the whole-program analysis such a call reads what a call of the
     original reads (banjo-nx's hand-written natives, app/src/cpu/hot/hand.txt there). The analysis assumes nothing
-    about what a callee writes, so the natives writing fewer registers changes nothing."""
+    about what a callee writes, so the natives writing fewer registers changes nothing. guwange-nx (2026-10-22): the
+    same for every port. default.xex's two have natives there too (src/cpu/guwange_native_crt.cpp); a game core's run
+    as recompiled, and they read r3, r4, r5 and the source bytes all the same. Their bodies must also stay as the
+    generator wrote them: tools/find_memcalls.py recognises the two by their text, and a second run of the steps found
+    no memcpy in a core whose body tools/dead_ctx_defs.py had trimmed in the first."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import find_memcalls
     memcpy, memset, _ = find_memcalls.find(gen)
@@ -152,6 +185,10 @@ def hot_functions(tree):
     the copies' guard compares the whole context with the original's, so those steps leave these functions alone."""
     path = os.path.join(APP, 'src', 'native', 'hot_functions.txt')
     names = set()
+    if not FUTARI_NATIVES:
+        # guwange-nx: no localized copies (the list in the tree is futari-nx's). The module's memcpy and memset are
+        # left alone instead (crt_natives above: their bodies must stay what tools/find_memcalls.py recognises).
+        return {'sub_%08X' % a for a in crt_natives(os.path.join(GEN, tree))}
     if os.path.isfile(path):
         for line in open(path, encoding='utf-8'):
             parts = line.split('#', 1)[0].split()

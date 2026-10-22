@@ -96,6 +96,10 @@ REXCVAR_DEFINE_BOOL(banjo_renut_fetch_data_unread, true, "Banjo/Enhancements",
                     "Renut's renderer on deko3d: a draw whose shaders fetch nothing by address gets fetch data address "
                     "and size 0 (they never read them) instead of a new allocation's, and no fetch binding")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(banjo_renut_fetch_window_narrow, true, "Banjo/Renut",
+                    "Renut's renderer on deko3d: the fetch data binding of a draw covers its own copies instead of the "
+                    "whole upload chunk (Ryujinx syncs a storage binding's whole range at each draw); false = the chunk")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(banjo_renut_shared_partial_clear, true, "Banjo/Enhancements",
                     "Renut's renderer: a draw's shared constants are zeroed from the booleans on (848 of 1,360 bytes); "
                     "the texture and sampler words before them are all written by FillTextures. Off: all zeroed")
@@ -2827,6 +2831,26 @@ u32 DescribeBoundFetches(const GuestDevice &device, const DrawCall &call, const 
   return mask;
 }
 
+// guwange-nx (2026-10-21, banjo_deko3d_bound_fetch_spec): the declaration types DescribeBoundFetches gives the
+// shader's bound fetches (SharedConstants.bound_fetch[i][3]), + 1, for the pipeline key; 0 where it gives none.
+void BoundFetchTypes(const ShaderRecord &vs, const VertexDeclarationRecord &declaration, u32 out[16]) {
+  if (!vs.entry)
+    return;
+  const ShaderVertexInput *inputs = g_shaderVertexInputs + vs.entry->vertexInputOffset;
+  const u32 count = std::min<u32>(vs.entry->vertexInputCount, std::min<u32>(kMaxBoundFetches, 16));
+  for (u32 i = 0; i < count; ++i) {
+    if (!(inputs[i].flags & kVertexInputBoundFetch))
+      continue;
+    for (const GuestVertexElement &e : declaration.elements) {
+      if (e.Usage != inputs[i].usage || e.UsageIndex != inputs[i].usageIndex)
+        continue;
+      if (u32(e.Stream) < kMaxVertexStreams)
+        out[i] = (BoundDeclType(u32(e.Type)) & 0x3FFFFFu) + 1u;
+      break;
+    }
+  }
+}
+
 bool FetchFromExportWindow(const GuestDevice &device, const DrawCall &call, u32 fetch_index,
                            u32 &slot, uint64_t &offset);
 bool EnsureBuffer(std::unique_ptr<plume::RenderBuffer> &buffer, uint64_t &capacity, uint64_t size,
@@ -2971,6 +2995,34 @@ UploadAllocation UploadVertexFetchData(const GuestDevice &device, const DrawCall
     // chunk, so draws keep the same SharedConstants (banjo_renut_shared_dedupe). 0 for a draw with no copies (its
     // shaders fetch nothing from memory).
     sc.vertex_fetch_bytes = copy_count ? u32(std::min<uint64_t>(alloc.chunk_size, 0xFFFFFFF0ull)) : 0u;
+#if defined(PLUME_DEKO3D)
+    // guwange-nx (2026-10-21, banjo_renut_fetch_window_narrow): on deko3d the fetch data is a storage binding, and
+    // Ryujinx brings a storage binding's whole range up to date with guest memory at each draw: the whole chunk (32 MB:
+    // Guwange's instanced tile shader reads its instances by address) left the emulated GPU seconds behind from the
+    // second frame (its first Ryujinx run: a deko3d fence never signalled). The binding covers this draw's copies
+    // alone (about 512 KB there), from a 256-byte boundary, and the slots count from it. On the console a binding's
+    // size costs nothing: what this gives up is the shared constants' reuse between the draws of a chunk.
+    static const bool narrow = REXCVAR_GET(banjo_renut_fetch_window_narrow);
+    if (narrow && IsDeko3D() && copy_count && alloc.gpu_address) {
+      u32 lo = ~0u, hi = 0;
+      for (u32 i = 0; i < copy_count; ++i) {
+        if (!copies[i].size)
+          continue;
+        const u32 at = sc.vertex_fetch_slots[copies[i].index] & ~3u;
+        lo = std::min(lo, at);
+        hi = std::max(hi, at + copies[i].size);
+      }
+      if (lo < hi) {
+        lo &= ~0xFFu;
+        for (u32 i = 0; i < copy_count; ++i) {
+          u32 &slot = sc.vertex_fetch_slots[copies[i].index];
+          slot = copies[i].size ? slot - lo : (slot & 3u);
+        }
+        sc.vertex_fetch_data = alloc.gpu_address + lo;
+        sc.vertex_fetch_bytes = ((hi - lo) + 15u) & ~15u;
+      }
+    }
+#endif
     return alloc;
   }
   sc.vertex_fetch_data = alloc.gpu_address;
@@ -3146,6 +3198,11 @@ PipelineKey MakeKey(const GuestDevice &device, const ShaderRecord *vs, const Sha
   // without the test (7) no compare and no discard, and the GPU tests depth before the pixel shader.
   if (ps && banjo::renut_gpu::AlphaSpecOn())
     key.alpha_func = alpha_test_func + 1;
+  // guwange-nx (2026-10-21, banjo_deko3d_bound_fetch_spec): the bound fetches' declaration types as the vertex
+  // shader's constants 920 + i: each fetch then decodes one format, not every one (Guwange's instanced sprite shaders
+  // went from 214 KB of GLSL, an 11.8 s compile on the console and a stalled GPU thread in Ryujinx).
+  if (vs && declaration && IsDeko3D() && banjo::renut_gpu::BoundFetchSpecOn())
+    BoundFetchTypes(*vs, *declaration, key.bound_types);
   // banjo-nx (2026-10-20, in-run A/B targets 15 / 16): in the off half of banjo_deko3d_light_branch's or
   // banjo_deko3d_gpr32's A/B the pipelines are built without its constant (911 / 910): keys of their own (reserved
   // bits 0 / 1), so both halves' pipelines stay built. 0 otherwise (the keys as before).

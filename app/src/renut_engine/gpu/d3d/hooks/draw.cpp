@@ -14,6 +14,8 @@
  * instead. Neither takes State().mutex here.
  */
 // futari-nx: device offsets translated to Futari's XDK (tools/renut_futari_layout.py)
+// guwange-nx: device offsets translated to Guwange's XDK (tools/renut_guwange_layout.py)
+#include <rex/frame_latency.h>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -45,12 +47,25 @@ using namespace renut::gpu;
 // the marshaling does not skip: the u32 after each double in the hooks'
 // parameters stands in for it.
 
+
+// guwange-nx (2026-10-22): a draw, clear or resolve of the game, for the latency trace (guwange_diag_latency_trace_s) and
+// for the late input's measure of a frame's end (src/guwange_late_input.cpp: the frame's last such call).
+namespace guwange::late_input {
+void NoteDraw();
+}
+namespace {
+inline void NoteGuestWork(const char* what) {
+  rex::latency::TraceEvent(what);
+  guwange::late_input::NoteDraw();
+}
+}  // namespace
+
 namespace {
 
 constexpr u32 kE_OUTOFMEMORY = 0x8007000Eu;
 // D3DVIEWPORT9 {0, 0, 0xFFFF, 0xFFFF, 0.0, 1.0} in N&B's data (unk_820018DC):
 // the whole surface. futari-nx: Futari's copy is at 0x820031D0.
-constexpr u32 kFullViewport = 0x820031D0;
+constexpr u32 kFullViewport = 0x820086A0;
 // D3DRS_HIZWRITEENABLE's index in the render state table.
 constexpr u32 kRenderStateHiZWriteEnable = 97;
 
@@ -106,6 +121,7 @@ bool ReadVector4(u32 va, float out[4]) {
 // void D3DDevice_DrawVertices(D3DDevice*, D3DPRIMITIVETYPE, UINT StartVertex,
 //                             UINT VertexCount) [0x8222C7A0]
 void D3DDevice_DrawVertices_hook(u32 device, u32 primitive, u32 start_vertex, u32 vertex_count) {
+  NoteGuestWork("DrawVertices");  // guwange-nx: the latency trace and the late input's frame end
   if (!Active())
     return;
   DrawCall call;
@@ -122,6 +138,7 @@ void D3DDevice_DrawVertices_hook(u32 device, u32 primitive, u32 start_vertex, u3
 //                                    UINT StartIndex, UINT IndexCount) [0x826567C8]
 void D3DDevice_DrawIndexedVertices_hook(u32 device, u32 primitive, u32 base_vertex,
                                         u32 start_index, u32 index_count) {
+  NoteGuestWork("DrawIndexedVertices");  // guwange-nx: the latency trace and the late input's frame end
   if (!Active())
     return;
   DrawCall call;
@@ -144,6 +161,7 @@ void D3DDevice_DrawIndexedVertices_hook(u32 device, u32 primitive, u32 base_vert
 // tessellated on the host (DrawCall::tessellation).
 void D3DDevice_DrawIndexedTessellatedVertices_hook(u32 device, u32 primitive, u32 base_vertex,
                                                    u32 start_index, u32 index_count) {
+  NoteGuestWork("DrawIndexedTessellatedVertices");  // guwange-nx: the latency trace and the late input's frame end
   if (!Active())
     return;
   DrawCall call;
@@ -163,6 +181,7 @@ void D3DDevice_DrawIndexedTessellatedVertices_hook(u32 device, u32 primitive, u3
 //                               const void *pVertexStreamZeroData, UINT Stride) [0x8222E520]
 void D3DDevice_DrawVerticesUP_hook(u32 device, u32 primitive, u32 vertex_count, u32 data,
                                    u32 stride) {
+  NoteGuestWork("DrawVerticesUP");  // guwange-nx: the latency trace and the late input's frame end
   if (!Active() || !data)
     return;
   DrawCall call;
@@ -183,6 +202,7 @@ void D3DDevice_DrawVerticesUP_hook(u32 device, u32 primitive, u32 vertex_count, 
 void D3DDevice_DrawIndexedVerticesUP_hook(u32 device, u32 primitive, u32 min_vertex,
                                           u32 num_vertices, u32 index_count, u32 index_data,
                                           u32 index_format, u32 vertex_data, u32 stride) {
+  NoteGuestWork("DrawIndexedVerticesUP");  // guwange-nx: the latency trace and the late input's frame end
   if (!Active() || !index_data || !vertex_data)
     return;
   DrawCall call;
@@ -208,6 +228,7 @@ void D3DDevice_DrawIndexedVerticesUP_hook(u32 device, u32 primitive, u32 min_ver
 // device, so the draw's state is captured now and its vertices copied at the
 // device's next hook (FlushDeferredVertices).
 u32 D3DDevice_BeginVertices_hook(u32 device, u32 primitive, u32 vertex_count, u32 stride) {
+  NoteGuestWork("BeginVertices");  // guwange-nx: the latency trace and the late input's frame end
   const u64 bytes = u64(vertex_count) * stride;
   if (!bytes || bytes > kVerticesScratchSize)
     return 0;
@@ -272,6 +293,7 @@ void Resolve(u32 device, u32 flags, const ClearRect *rect, u32 dest_texture, i32
 // Z takes r7's slot, so Stencil arrives in r8.
 void D3DDevice_ClearF_hook(u32 device, u32 flags, u32 rect_va, u32 color_va, double z,
                            u32 /*z_slot*/, u32 stencil) {
+  NoteGuestWork("ClearF");  // guwange-nx: the latency trace and the late input's frame end
   ClearRect rect;
   const bool has_rect = rect_va && ReadRect(rect_va, rect);
   float color[4] = {0, 0, 0, 0};  // unk_82001160 without one
@@ -286,6 +308,7 @@ void D3DDevice_ClearF_hook(u32 device, u32 flags, u32 rect_va, u32 color_va, dou
 // 2^23 / 255 and offset), per rect. Z takes r8's slot.
 void D3DDevice_Clear_hook(u32 device, u32 count, u32 rects_va, u32 flags, u32 color_argb,
                           double z, u32 /*z_slot*/, u32 stencil) {
+  NoteGuestWork("Clear");  // guwange-nx: the latency trace and the late input's frame end
   const float scale = std::bit_cast<float>(0x47008081u);  // aG, unk_82001150
   auto channel = [scale](u32 byte) {
     return std::fmaf(std::bit_cast<float>(0x3F800000u | (byte & 0xFF)), scale, -scale);
@@ -312,6 +335,7 @@ void D3DDevice_Clear_hook(u32 device, u32 count, u32 rects_va, u32 flags, u32 co
 void D3DDevice_Resolve_hook(u32 device, u32 flags, u32 rect_va, u32 dest_texture, u32 point_va,
                             u32 dest_level, u32 dest_slice, u32 color_va, double clear_z,
                             u32 /*z_slot*/, u32 clear_stencil, u32 parameters) {
+  NoteGuestWork("Resolve");  // guwange-nx: the latency trace and the late input's frame end
   ClearRect rect;
   const bool has_rect = rect_va && ReadRect(rect_va, rect);
   i32 dest_x = 0, dest_y = 0;
@@ -548,7 +572,7 @@ void D3DDevice_Present_hook(u32 device) {
   native::SetViewport(d, viewport[0], viewport[1], viewport[2], viewport[3], viewport[4],
                       viewport[5]);
   native::SetScissorRect(d, scissor[0], scissor[1], scissor[2], scissor[3]);
-  native::Swap(device, front_buffer, device + 0x3618);
+  native::Swap(device, front_buffer, device + 0x361C);
 }
 
 // void D3DDevice_SetVertexShader(D3DDevice*, D3DVertexShader*) [0x8222A0A8]

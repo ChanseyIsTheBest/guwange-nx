@@ -6,7 +6,30 @@
 #include "renut_engine/gpu/backend/backend.h"      // banjo-nx (2026-10-19): IsDeko3D
 #include "renut_engine/gpu/banjo_renut_tuning.h"  // banjo-nx (2026-10-19): Depth24On
 
+#include <algorithm>
+#include <array>
 #include <cstring>
+
+#include <rex/cvar.h>
+
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
+
+// guwange-nx (2026-10-22, CPU round): the 16-bit texel conversions through lookup tables of the expanded components
+// (the same values: the tables are made from Expand below), on AArch64 eight texels at a time with NEON table lookups
+// and an interleaved store. Guwange's frame buffer (1.7 MB of 1-5-5-5 texels, uploaded twice a frame) made the scalar
+// loop 9 % of the console's render thread.
+REXCVAR_DEFINE_BOOL(banjo_renut_neon_texels, true, "Banjo/Renut",
+                    "16-bit texel conversions (5-6-5, 1-5-5-5, 4-4-4-4) by table lookups, eight texels at a time "
+                    "with NEON on the Switch; false = one texel and three divisions at a time");
+REXCVAR_DEFINE_BOOL(banjo_renut_native_16bit_textures, true, "Banjo/Renut",
+                    "deko3d: linear 5-5-5-1 / 5-6-5 / 4-4-4-4 textures (Guwange's frame buffer) kept in their own 16-bit "
+                    "format (RGB5A1 / RGB565 / RGBA4) instead of expanded to RGBA8: half the upload and its cache "
+                    "clean, no conversion; false = expanded");
+REXCVAR_DEFINE_BOOL(banjo_renut_fused_texel_rows, true, "Banjo/Renut",
+                    "A row of a linear 16-bit texture read from guest memory, byte-swapped and converted in one pass "
+                    "(no row buffer, no separate swap); false = copied, swapped and converted one after the other");
 
 namespace renut::gpu {
 
@@ -242,12 +265,123 @@ inline uint16_t Expand16(uint32_t value, uint32_t bits) {
   return uint16_t((uint64_t(value) * 65535u + max / 2) / max);
 }
 
+// Expand(x, bits) for every x of 4, 5 and 6 bits.
+template <uint32_t Bits>
+constexpr std::array<uint8_t, (1u << Bits)> ExpandTable() {
+  std::array<uint8_t, (1u << Bits)> t{};
+  constexpr uint32_t max = (1u << Bits) - 1;
+  for (uint32_t x = 0; x <= max; ++x)
+    t[x] = uint8_t((x * 255u + max / 2) / max);
+  return t;
+}
+alignas(16) constexpr std::array<uint8_t, 16> kExpand4 = ExpandTable<4>();
+alignas(16) constexpr std::array<uint8_t, 32> kExpand5 = ExpandTable<5>();
+alignas(16) constexpr std::array<uint8_t, 64> kExpand6 = ExpandTable<6>();
+
+bool TableTexels() {
+  static const bool on = REXCVAR_GET(banjo_renut_neon_texels);
+  return on;
+}
+
+bool FusedTexelRows() {
+  static const bool on = REXCVAR_GET(banjo_renut_fused_texel_rows);
+  return on;
+}
+
+bool Native16BitTextures() {
+  static const bool on = REXCVAR_GET(banjo_renut_native_16bit_textures);
+  return on;
+}
+
+bool Is16BitConversion(TexelConversion conversion) {
+  return conversion == TexelConversion::R5G6B5 || conversion == TexelConversion::R5G5B5A1 ||
+         conversion == TexelConversion::R4G4B4A4;
+}
+
+#if defined(__aarch64__)
+struct NeonTables {
+  uint8x16x2_t t5;
+  uint8x16x4_t t6;
+  uint8x16_t t4;
+};
+inline NeonTables LoadTables() {
+  return {{vld1q_u8(kExpand5.data()), vld1q_u8(kExpand5.data() + 16)},
+          {vld1q_u8(kExpand6.data()), vld1q_u8(kExpand6.data() + 16), vld1q_u8(kExpand6.data() + 32),
+           vld1q_u8(kExpand6.data() + 48)},
+          vld1q_u8(kExpand4.data())};
+}
+// Eight texels (host order) to 32 bytes of R8G8B8A8.
+inline void Convert8(TexelConversion conversion, const NeonTables &t, uint16x8_t v, uint8_t *dst) {
+  const uint8x16x2_t &t5 = t.t5;
+  const uint8x16x4_t &t6 = t.t6;
+  const uint8x16_t &t4 = t.t4;
+  {
+    uint8x8x4_t out;
+    if (conversion == TexelConversion::R5G6B5) {
+      out.val[0] = vqtbl2_u8(t5, vmovn_u16(vandq_u16(v, vdupq_n_u16(0x1F))));
+      out.val[1] = vqtbl4_u8(t6, vmovn_u16(vandq_u16(vshrq_n_u16(v, 5), vdupq_n_u16(0x3F))));
+      out.val[2] = vqtbl2_u8(t5, vmovn_u16(vshrq_n_u16(v, 11)));
+      out.val[3] = vdup_n_u8(0xFF);
+    } else if (conversion == TexelConversion::R5G5B5A1) {
+      out.val[0] = vqtbl2_u8(t5, vmovn_u16(vandq_u16(v, vdupq_n_u16(0x1F))));
+      out.val[1] = vqtbl2_u8(t5, vmovn_u16(vandq_u16(vshrq_n_u16(v, 5), vdupq_n_u16(0x1F))));
+      out.val[2] = vqtbl2_u8(t5, vmovn_u16(vandq_u16(vshrq_n_u16(v, 10), vdupq_n_u16(0x1F))));
+      // 0 or 1 -> 0x00 or 0xFF
+      out.val[3] = vreinterpret_u8_s8(vneg_s8(vreinterpret_s8_u8(vmovn_u16(vshrq_n_u16(v, 15)))));
+    } else {  // R4G4B4A4
+      out.val[0] = vqtbl1_u8(t4, vmovn_u16(vandq_u16(v, vdupq_n_u16(0xF))));
+      out.val[1] = vqtbl1_u8(t4, vmovn_u16(vandq_u16(vshrq_n_u16(v, 4), vdupq_n_u16(0xF))));
+      out.val[2] = vqtbl1_u8(t4, vmovn_u16(vandq_u16(vshrq_n_u16(v, 8), vdupq_n_u16(0xF))));
+      out.val[3] = vqtbl1_u8(t4, vmovn_u16(vshrq_n_u16(v, 12)));
+    }
+    vst4_u8(dst, out);
+  }
+}
+#endif
+
+// The three 16-bit conversions of ConvertTexels by the tables (banjo_renut_neon_texels).
+void ConvertTexels16(TexelConversion conversion, const uint8_t *src, uint8_t *dst, uint32_t count) {
+  uint32_t i = 0;
+#if defined(__aarch64__)
+  const NeonTables tables = LoadTables();
+  for (; i + 8 <= count; i += 8, src += 16, dst += 32) {
+    uint16x8_t v;
+    std::memcpy(&v, src, 16);
+    Convert8(conversion, tables, v, dst);
+  }
+#endif
+  for (; i < count; ++i, src += 2, dst += 4) {
+    uint16_t v;
+    std::memcpy(&v, src, 2);
+    if (conversion == TexelConversion::R5G6B5) {
+      dst[0] = kExpand5[v & 0x1F];
+      dst[1] = kExpand6[(v >> 5) & 0x3F];
+      dst[2] = kExpand5[(v >> 11) & 0x1F];
+      dst[3] = 0xFF;
+    } else if (conversion == TexelConversion::R5G5B5A1) {
+      dst[0] = kExpand5[v & 0x1F];
+      dst[1] = kExpand5[(v >> 5) & 0x1F];
+      dst[2] = kExpand5[(v >> 10) & 0x1F];
+      dst[3] = (v & 0x8000) ? 0xFF : 0x00;
+    } else {
+      dst[0] = kExpand4[v & 0xF];
+      dst[1] = kExpand4[(v >> 4) & 0xF];
+      dst[2] = kExpand4[(v >> 8) & 0xF];
+      dst[3] = kExpand4[(v >> 12) & 0xF];
+    }
+  }
+}
+
 } // namespace
 
 void ConvertTexels(TexelConversion conversion, const uint8_t *src, uint8_t *dst, uint32_t count) {
   // Xenos packs the first component in the lowest bits; the host formats put
   // it first in memory, so components are kept in XYZW order and the fetch
   // constant's swizzle is applied by the texture view.
+  if (Is16BitConversion(conversion) && TableTexels()) {
+    ConvertTexels16(conversion, src, dst, count);
+    return;
+  }
   switch (conversion) {
   case TexelConversion::Copy:
     break;
@@ -323,6 +457,71 @@ void ConvertTexels(TexelConversion conversion, const uint8_t *src, uint8_t *dst,
   }
 }
 
+bool ConvertTexelsFromGuest(TexelConversion conversion, u32 endian, const uint8_t *src, uint8_t *dst,
+                            uint32_t count) {
+  const u32 e = endian & 3;
+  // SwapEndian leaves the last two bytes of a row of an odd number of texels as they are in the 32-bit modes.
+  if (!FusedTexelRows() || !Is16BitConversion(conversion) || ((e == 2 || e == 3) && (count & 1)))
+    return false;
+  uint32_t i = 0;
+#if defined(__aarch64__)
+  const NeonTables tables = LoadTables();
+  for (; i + 8 <= count; i += 8, src += 16, dst += 32) {
+    uint8x16_t b = vld1q_u8(src);
+    if (e == 1)
+      b = vrev16q_u8(b);
+    else if (e == 2)
+      b = vrev32q_u8(b);
+    else if (e == 3)
+      b = vreinterpretq_u8_u16(vrev32q_u16(vreinterpretq_u16_u8(b)));
+    Convert8(conversion, tables, vreinterpretq_u16_u8(b), dst);
+  }
+#endif
+  // The rest (all of the row without NEON) eight texels at a time through a small buffer: SwapEndian on whole
+  // 32-bit words in the 32-bit modes (the count is even, so every piece but the last is eight texels).
+  while (i < count) {
+    uint8_t piece[16];
+    const uint32_t n = std::min<uint32_t>(count - i, 8);
+    SwapEndian(e, src, piece, size_t(n) * 2);
+    ConvertTexels16(conversion, piece, dst, n);
+    i += n, src += 2 * n, dst += 4 * n;
+  }
+  return true;
+}
+
+TextureFormatInfo NativeLinear16BitInfo(const TextureFormatInfo &info) {
+  using F = plume::RenderFormat;
+  if (!Native16BitTextures() || !IsDeko3D())
+    return info;
+  F host;
+  switch (info.conversion) {
+  case TexelConversion::R5G5B5A1:
+    host = F::A1B5G5R5_UNORM;
+    break;
+  case TexelConversion::R5G6B5:
+    host = F::B5G6R5_UNORM;
+    break;
+  case TexelConversion::R4G4B4A4:
+    host = F::A4B4G4R4_UNORM;
+    break;
+  default:
+    return info;
+  }
+  return TextureFormatInfo{host, TexelConversion::Copy, 1, 2, 2, false};
+}
+
+bool CopyRowFromGuest(u32 endian, const uint8_t *src, uint8_t *dst, size_t bytes) {
+  if (!FusedTexelRows())
+    return false;
+  const u32 e = endian & 3;
+  SwapEndian(e, src, dst, bytes);
+  // SwapEndian in place leaves the bytes after the last whole unit as they are: here they are copied as they are.
+  const size_t unit = e == 1 ? 2 : e >= 2 ? 4 : 1;
+  for (size_t i = bytes - bytes % unit; i < bytes; ++i)
+    dst[i] = src[i];
+  return true;
+}
+
 void DecodeBlockRow(TexelConversion conversion, const uint8_t *src, uint8_t *dst, uint32_t count,
                     uint32_t dst_row_pitch) {
   if (conversion != TexelConversion::CTX1)
@@ -358,6 +557,26 @@ void DecodeBlockRow(TexelConversion conversion, const uint8_t *src, uint8_t *dst
 void SwapEndian(u32 endian, const void *src, void *dst, size_t bytes) {
   const auto *s = static_cast<const uint8_t *>(src);
   auto *d = static_cast<uint8_t *>(dst);
+#if defined(__aarch64__)
+  // guwange-nx (2026-10-22, banjo_renut_native_16bit_textures: the frame buffer's whole upload is this swap now):
+  // 16 bytes a step, the same bytes as the loops below (which do the rest).
+  size_t done = 0;
+  if ((endian & 3) != 0) {
+    for (; done + 16 <= bytes; done += 16) {
+      uint8x16_t v = vld1q_u8(s + done);
+      if ((endian & 3) == 1)
+        v = vrev16q_u8(v);
+      else if ((endian & 3) == 2)
+        v = vrev32q_u8(v);
+      else
+        v = vreinterpretq_u8_u16(vrev32q_u16(vreinterpretq_u16_u8(v)));
+      vst1q_u8(d + done, v);
+    }
+    s += done;
+    d += done;
+    bytes -= done;
+  }
+#endif
   switch (endian & 3) {
   case 1:  // 8in16
     for (size_t i = 0; i + 1 < bytes; i += 2) {

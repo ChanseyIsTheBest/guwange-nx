@@ -9,6 +9,7 @@
  * packets, which N&B's D3D writes into the ring, are left out.
  */
 // futari-nx: device offsets translated to Futari's XDK (tools/renut_futari_layout.py)
+// guwange-nx: device offsets translated to Guwange's XDK (tools/renut_guwange_layout.py)
 #include "renut_engine/gpu/d3d/d3d_native.h"
 
 #include <algorithm>
@@ -38,7 +39,7 @@ constexpr u32 kPointSize = 0x2F24;
 constexpr u32 kPointSizeMin = 0x2F28;
 constexpr u32 kPointSizeMax = 0x2F2C;
 constexpr u32 kHighPrecisionBlend = 0x2FAC;  // [4]
-constexpr u32 kPresentInterval = 0x35EC;
+constexpr u32 kPresentInterval = 0x35F0;
 constexpr u32 kBehaviorFlags2 = 0x5E80;
 // Sampler state storage, a byte per sampler.
 constexpr u32 kMaxAnisotropy = 0x2F44;
@@ -729,8 +730,8 @@ constexpr SamplerStateFn kSamplerStateFns[kSamplerStates] = {
 
 // The state tables: {getter, setter, default} per state. futari-nx: Futari's (D3D_InitializeApiState sub_820AAF68
 // reads them; N&B's 0x82E506F0 / 0x82E50BD0), 101 render and 20 sampler states as N&B's.
-constexpr u32 kRenderStateTable = 0x821E14F0;
-constexpr u32 kSamplerStateTable = 0x821E19B0;
+constexpr u32 kRenderStateTable = 0x82638D28;
+constexpr u32 kSamplerStateTable = 0x826391E8;
 constexpr u32 kTextureSamplers = 26;
 
 u32 TableWord(u32 table, u32 index, u32 field) {
@@ -1364,7 +1365,7 @@ namespace {
 
 // Per D3DFORMAT (low 6 bits) its format description; 0xF00 marks a float
 // depth format (word_820052F8).
-constexpr u32 kFormatTable = 0x82003430;  // futari-nx: Futari's (FindTextureSize sub_8209B980; N&B's 0x820052F8)
+constexpr u32 kFormatTable = 0x82008620;  // futari-nx: Futari's (FindTextureSize sub_8209B980; N&B's 0x820052F8)
 // The register packets between RB_COPY_CONTROL and RB_COPY_DEST_INFO.
 constexpr u32 kCopyControl = 0x2A18;
 constexpr u32 kCopyDestInfo = 0x2A24;

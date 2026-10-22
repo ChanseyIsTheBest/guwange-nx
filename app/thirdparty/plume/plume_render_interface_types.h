@@ -169,6 +169,12 @@ namespace plume {
         S8_UINT,
         // banjo-nx (2026-10-19): 24-bit unorm depth with 8-bit stencil, 4 bytes a pixel (deko3d Z24S8; the Xenos D24S8).
         D24_UNORM_S8_UINT,
+        // guwange-nx (2026-10-22): 16-bit packed colour, named most significant bits first as Vulkan does (R in bits
+        // 0-4 of A1B5G5R5): the Xenos 1_5_5_5, 5_6_5 and 4_4_4_4 texels as they are, after the endian swap
+        // (deko3d RGB5A1 / RGB565 / RGBA4, Vulkan *_UNORM_PACK16; D3D12 has no format of this order).
+        A1B5G5R5_UNORM,
+        B5G6R5_UNORM,
+        A4B4G4R4_UNORM,
         MAX
     };
 
@@ -584,6 +590,9 @@ namespace plume {
         case RenderFormat::R16_UINT:
         case RenderFormat::R16_SNORM:
         case RenderFormat::R16_SINT:
+        case RenderFormat::A1B5G5R5_UNORM:
+        case RenderFormat::B5G6R5_UNORM:
+        case RenderFormat::A4B4G4R4_UNORM:
             return 2;
         case RenderFormat::R8_TYPELESS:
         case RenderFormat::R8_UNORM:
@@ -675,6 +684,9 @@ namespace plume {
         case RenderFormat::R8_SNORM:
         case RenderFormat::R8_SINT:
         case RenderFormat::S8_UINT:
+        case RenderFormat::A1B5G5R5_UNORM:
+        case RenderFormat::B5G6R5_UNORM:
+        case RenderFormat::A4B4G4R4_UNORM:
             return 1;
         case RenderFormat::BC1_TYPELESS:
         case RenderFormat::BC1_UNORM:

@@ -9,6 +9,8 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <thread>
+
 #include <rex/logging.h>
 #include <rex/runtime.h>
 #include <rex/string.h>
@@ -24,6 +26,7 @@ REXCVAR_DEFINE_BOOL(headless, false, "Kernel",
 #include <rex/types.h>
 #include <rex/system/xtypes.h>
 #include <rex/thread.h>
+#include <rex/thread/timer_queue.h>
 #include <rex/ui/imgui_dialog.h>
 #include <rex/ui/imgui_drawer.h>
 #include <rex/ui/window.h>
@@ -591,6 +594,40 @@ u32 XamShowGamerCardUIForXUID_entry(u32 user_index, u64 xuid) {
   return X_ERROR_NOT_LOGGED_ON;
 }
 
+// guwange-nx (2026-10-21): the Guide's achievements, friends and marketplace pages, which this host does not have.
+// They were stubs, whose result is their first argument (user 0: ERROR_SUCCESS) with no XN_SYS_UI: Guwange's main menu
+// (a script: "Achievements" is a bound native returning the call's success) then waits for the Guide to show and to
+// close, and never read the pad again. Neither failing nor XN_SYS_UI true and false within the call (as
+// xeXamDispatchHeadless sends them: both arrive before the game's next frame) got it out. The Guide is shown for a
+// moment instead: XN_SYS_UI true now, false after kGuidePageMs from another thread, and the call succeeds.
+constexpr int kGuidePageMs = 500;
+
+X_RESULT ShowGuidePageForAMoment() {
+  REX_KERNEL_STATE()->BroadcastNotification(0x9, true);  // XN_SYS_UI
+  // The closing notification from the SDK's timer thread. Not a detached std::thread: libnx has no pthread_detach,
+  // and std::thread::detach threw std::system_error (Function not implemented) on the console, a std::terminate the
+  // moment the player chose Achievements (2026-10-22).
+  rex::thread::QueueTimerOnce([](void*) { REX_KERNEL_STATE()->BroadcastNotification(0x9, false); }, nullptr,
+                              rex::thread::TimerQueueWaitItem::clock::now() + std::chrono::milliseconds(kGuidePageMs));
+  return X_ERROR_SUCCESS;
+}
+
+u32 XamShowAchievementsUI_entry(u32 user_index, u32 unknown) {
+  REXKRNL_DEBUG("XamShowAchievementsUI({}, {:08X})", uint32_t(user_index), uint32_t(unknown));
+  return ShowGuidePageForAMoment();
+}
+
+u32 XamShowFriendsUI_entry(u32 user_index) {
+  REXKRNL_DEBUG("XamShowFriendsUI({})", uint32_t(user_index));
+  return ShowGuidePageForAMoment();
+}
+
+u32 XamShowMarketplaceUI_entry(u32 user_index, u32 entry_point, u64 offer_id, u32 content_categories) {
+  REXKRNL_DEBUG("XamShowMarketplaceUI({}, {}, {:016X}, {:08X})", uint32_t(user_index), uint32_t(entry_point),
+                uint64_t(offer_id), uint32_t(content_categories));
+  return ShowGuidePageForAMoment();
+}
+
 }  // namespace xam
 }  // namespace kernel
 }  // namespace rex
@@ -606,6 +643,9 @@ REX_EXPORT(__imp__XamShowMessageBoxUIEx, rex::kernel::xam::XamShowMessageBoxUIEx
 REX_EXPORT(__imp__XamShowMarketplaceDownloadItemsUI,
            rex::kernel::xam::XamShowMarketplaceDownloadItemsUI_entry)
 REX_EXPORT(__imp__XamShowGamerCardUIForXUID, rex::kernel::xam::XamShowGamerCardUIForXUID_entry)
+REX_EXPORT(__imp__XamShowAchievementsUI, rex::kernel::xam::XamShowAchievementsUI_entry)
+REX_EXPORT(__imp__XamShowFriendsUI, rex::kernel::xam::XamShowFriendsUI_entry)
+REX_EXPORT(__imp__XamShowMarketplaceUI, rex::kernel::xam::XamShowMarketplaceUI_entry)
 
 REX_EXPORT_STUB(__imp__XamIsGuideDisabled);
 REX_EXPORT_STUB(__imp__XamIsMessageBoxActive);
@@ -617,7 +657,6 @@ REX_EXPORT_STUB(__imp__XamNavigate);
 REX_EXPORT_STUB(__imp__XamNavigateBack);
 REX_EXPORT_STUB(__imp__XamOverrideHudOpenType);
 REX_EXPORT_STUB(__imp__XamShowAchievementDetailsUI);
-REX_EXPORT_STUB(__imp__XamShowAchievementsUI);
 REX_EXPORT_STUB(__imp__XamShowAchievementsUIEx);
 REX_EXPORT_STUB(__imp__XamShowAndWaitForMessageBoxEx);
 REX_EXPORT_STUB(__imp__XamShowAvatarAwardGamesUI);
@@ -643,7 +682,6 @@ REX_EXPORT_STUB(__imp__XamShowFitnessWarnAboutTimeUI);
 REX_EXPORT_STUB(__imp__XamShowFofUI);
 REX_EXPORT_STUB(__imp__XamShowForcedNameChangeUI);
 REX_EXPORT_STUB(__imp__XamShowFriendRequestUI);
-REX_EXPORT_STUB(__imp__XamShowFriendsUI);
 REX_EXPORT_STUB(__imp__XamShowFriendsUIp);
 REX_EXPORT_STUB(__imp__XamShowGameInviteUI);
 REX_EXPORT_STUB(__imp__XamShowGameVoiceChannelUI);
@@ -664,7 +702,6 @@ REX_EXPORT_STUB(__imp__XamShowLiveUpsellUIEx);
 REX_EXPORT_STUB(__imp__XamShowMarketplaceGetOrderReceipts);
 REX_EXPORT_STUB(__imp__XamShowMarketplacePurchaseOrderUI);
 REX_EXPORT_STUB(__imp__XamShowMarketplacePurchaseOrderUIEx);
-REX_EXPORT_STUB(__imp__XamShowMarketplaceUI);
 REX_EXPORT_STUB(__imp__XamShowMarketplaceUIEx);
 REX_EXPORT_STUB(__imp__XamShowMessageBox);
 REX_EXPORT_STUB(__imp__XamShowMessageComposeUI);

@@ -47,6 +47,7 @@ struct Latched {
   bool depth_words_view = false;
   bool tess_spec = false;
   bool alpha_spec = false;
+  bool bound_fetch_spec = false;  // guwange-nx
   bool draw_resolves = false;
   bool resolve_skip = false;
   bool depth_words_lazy = false;
@@ -227,6 +228,9 @@ bool Deko3DBarrierMergeOn();
 bool Deko3DBarrierLeanOn();
 // banjo_deko3d_alpha_spec (2026-10-18): the alpha test's function in the pipeline key (constant 903).
 inline bool AlphaSpecOn() { return Latch().alpha_spec; }
+// guwange-nx (banjo_deko3d_bound_fetch_spec, 2026-10-21): the bound fetches' declaration types in the pipeline key
+// (constants 920-935).
+inline bool BoundFetchSpecOn() { return Latch().bound_fetch_spec; }
 // banjo_deko3d_tess_spec / banjo_deko3d_vs_outputs (2026-10-18): constants 904 and 905 of the deko3d shaders.
 inline bool TessSpecOn() { return Latch().tess_spec; }
 bool Deko3DVsOutputsOn();

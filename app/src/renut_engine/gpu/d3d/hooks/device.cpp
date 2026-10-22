@@ -14,6 +14,7 @@
  * (BlockOnFence_hook), and Swap waits when the game gets a frame too far ahead.
  */
 // futari-nx: device offsets translated to Futari's XDK (tools/renut_futari_layout.py)
+// guwange-nx: device offsets translated to Guwange's XDK (tools/renut_guwange_layout.py)
 #include <rex/frame_latency.h>  // banjo-nx (2026-10-19)
 #include "renut_engine/display_sync.h"
 #include <algorithm>
@@ -68,12 +69,21 @@ REXCVAR_DEFINE_BOOL(banjo_renut_core_layout, true, "Banjo/Enhancements",
                     "thread is on core 1 at a higher priority), so no game thread time-slices with it (Horizon slices a "
                     "core's threads of one priority in 10 ms). Off: every guest thread on any core, as before")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// guwange-nx (2026-10-22): see D3DDevice_Swap_hook.
+extern "C" uint32_t RexSetGuestThreadCoreLayoutAlone(void *alone, int alone_core, uint32_t others_mask,
+                                                     int others_preferred);
+REXCVAR_DEFINE_BOOL(guwange_core_layout_drawing, true, "Guwange/Enhancements",
+                    "With banjo_renut_core_layout, when the thread drawing is not the guest main thread (Guwange's "
+                    "main only sleeps; its drawing loop and the arcade board's emulation are two other threads): the "
+                    "drawing thread alone on core 0 and the others, the main thread too, on cores 1-2 (a console "
+                    "profile had both working threads on core 2 at 48 fps). Off: the main thread on core 0 as before")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 using namespace renut::gpu;
 
 // Kernel exports the device code uses.
 // futari-nx: the game's GetCurrentThreadId is Futari's sub_8208DA10 (CreateDevice's sub_820AB668 stores it at +10888).
-REX_IMPORT(__imp__sub_8208DA10, GuestGetCurrentThreadId, u32());
+REX_IMPORT(__imp__sub_82252CF0, GuestGetCurrentThreadId, u32());
 REX_IMPORT(__imp__RtlInitializeCriticalSection, RtlInitializeCriticalSection, void(u32));
 REX_IMPORT(__imp__KeQueryPerformanceFrequency, KeQueryPerformanceFrequency, u32());
 REX_IMPORT(__imp__KeGetCurrentProcessType, KeGetCurrentProcessType, u32());
@@ -107,22 +117,22 @@ constexpr u32 kDeviceOffsetFenceCompletion = 10896;
 // Nonzero while a KickOff is in progress (BlockOnFence does not kick then).
 constexpr u32 kDeviceOffsetInKickOff = 13408;
 // Side buffer (0x12C0 bytes) every device gets.
-constexpr u32 kDeviceOffsetSideBuffer = 16936;
+constexpr u32 kDeviceOffsetSideBuffer = 16940;
 constexpr u32 kSideBufferSize = 0x12C0;
 // Set to -1 by the device-type-2 path.
-constexpr u32 kDeviceOffsetsMinusOne[] = {21768, 21772, 15144};
+constexpr u32 kDeviceOffsetsMinusOne[] = {21772, 21776, 15148};
 constexpr u32 kDeviceTypeNoHardware = 2;
 // Copied from the global qword at 0x82F39B38 into every device.
 constexpr u32 kDeviceOffsetGlobalQword = 10880;
-constexpr u32 kGlobalQwordVa = 0x821E1AF8;
+constexpr u32 kGlobalQwordVa = 0x82639340;
 // Hardware-path fields: two critical sections, QueryPerformanceFrequency and
 // its reciprocal as floats, and 41 words set to -1.
-constexpr u32 kDeviceOffsetCriticalSection0 = 15152;
-constexpr u32 kDeviceOffsetCriticalSection1 = 15180;
-constexpr u32 kDeviceOffsetPerfFrequency = 21796;
+constexpr u32 kDeviceOffsetCriticalSection0 = 15156;
+constexpr u32 kDeviceOffsetCriticalSection1 = 15184;
+constexpr u32 kDeviceOffsetPerfFrequency = 21800;
 constexpr u32 kDeviceOffsetTitleMinusOne = 23592;
 // Import slot holding the address of the kernel's VdGlobalDevice variable.
-constexpr u32 kVdGlobalDeviceImportSlot = 0x820005F8;
+constexpr u32 kVdGlobalDeviceImportSlot = 0x82000874;
 
 constexpr u32 kE_OUTOFMEMORY = 0x8007000Eu;
 
@@ -205,7 +215,7 @@ void XenonGpuInitialize(native::Device d) {
 
 // D3D::InitializeApiState (0x826597C8).
 void InitializeApiState(native::Device d) {
-  const u32 present_interval = d.W(0x35EC);
+  const u32 present_interval = d.W(0x35F0);
   const u32 behavior_flags2 = d.W(0x5E80);
   native::InitializeStateTables(d);
   d.SetW(0x3050, 5);
@@ -228,7 +238,7 @@ void InitializeApiState(native::Device d) {
   // The default vertex declaration is the device's own, at +0x2FA0.
   d.SetW(0x2ED8, d.va + 0x3050);
   d.Dirty(2, 0x80000);
-  d.SetW(0x35EC, present_interval);
+  d.SetW(0x35F0, present_interval);
   const u32 flags2 = d.W(0x5E80);
   d.SetW(0x5E80, (behavior_flags2 & 1) ? (flags2 | 1) : (flags2 & ~1u));
   d.SetW(native::off::PredicationSet, 0);
@@ -250,7 +260,7 @@ void SetScalerParameters(native::Device d, const be_u32 *scaler) {
     copy[i] = scaler[i];
   copy[6] = copy[10] = scaler[6] ? 3 : 0;
   for (u32 i = 0; i < 14; ++i)
-    d.SetW(0x366C + i * 4, copy[i]);
+    d.SetW(0x3670 + i * 4, copy[i]);
   d.SetB(native::off::Flags2, d.B(native::off::Flags2) | 0x10);
 }
 
@@ -283,10 +293,10 @@ bool InitializePresentationParameters(native::Device d, u32 parameters_va) {
 
   rex::system::X_VIDEO_MODE mode{};
   rex::kernel::xboxkrnl::VdQueryVideoMode(&mode);
-  d.SetW(0x54F8, u32(mode.display_width));
-  d.SetW(0x5500, u32(mode.display_width));
-  d.SetW(0x5504, u32(i64(float(mode.refresh_rate) + 0.5f)));
-  d.SetW(0x54FC, u32(mode.display_height));
+  d.SetW(0x54FC, u32(mode.display_width));
+  d.SetW(0x5504, u32(mode.display_width));
+  d.SetW(0x5508, u32(i64(float(mode.refresh_rate) + 0.5f)));
+  d.SetW(0x5500, u32(mode.display_height));
 
   // futari-nx: Futari asks for the automatic front buffer (its Swaps present device+AutoFrontBuffer): a texture of the
   // back buffer's size in the front buffer format, as Futari's D3D makes it (sub_820AB1D0: CreateTexture(width, height,
@@ -312,9 +322,9 @@ bool InitializePresentationParameters(native::Device d, u32 parameters_va) {
     native::SetDepthStencilSurface(d, surface);
   }
   for (u32 i = 0; i < 0x7C / 4; ++i)
-    d.SetW(0x35B8 + i * 4, p[i]);
+    d.SetW(0x35BC + i * 4, p[i]);
   if ((front_format & 0x3FFC0000u) != 0x24900000u)
-    d.SetW(0x35F8, (front_format & 0x3F) | 0x28280100u);
+    d.SetW(0x35FC, (front_format & 0x3F) | 0x28280100u);
   SetScalerParameters(d, p + 0x60 / 4);
   // The default gamma: linear, as a piecewise-linear ramp for the front
   // buffer formats 7 and 0x36 (0x32 counts as 6).
@@ -341,7 +351,7 @@ bool InitializePresentationParameters(native::Device d, u32 parameters_va) {
     }
     SetGammaRamp(d, ramp);
   }
-  d.SetW(0x4214, ~0u);
+  d.SetW(0x4218, ~0u);
   return true;
 }
 
@@ -351,7 +361,7 @@ bool InitializePresentationParameters(native::Device d, u32 parameters_va) {
 bool InitializeTitleDevice(native::Device d, u32 present_parameters) {
   RtlInitializeCriticalSection(d.va + kDeviceOffsetCriticalSection0);
   RtlInitializeCriticalSection(d.va + kDeviceOffsetCriticalSection1);
-  d.SetW(16920, 0);
+  d.SetW(16924, 0);
 
   // D3D reads the device through the kernel's VdGlobalDevice from any thread
   // (resource locks, blockers).
@@ -437,8 +447,8 @@ u32 Direct3D_CreateDevice_hook(u32 /*adapter*/, u32 device_type, u32 /*unused*/,
     if (!(behavior_flags & 0x100) && !(behavior_flags & 0x3F000000))
       behavior_flags |= 0xC000000;
     WriteU32(bytes, d3d::kDeviceOffsetBehaviorFlags, behavior_flags);
-    WriteU32(bytes, 21768, 0xFFFFFFFFu);
     WriteU32(bytes, 21772, 0xFFFFFFFFu);
+    WriteU32(bytes, 21776, 0xFFFFFFFFu);
   } else {
     for (u32 offset : kDeviceOffsetsMinusOne)
       WriteU32(bytes, offset, 0xFFFFFFFFu);
@@ -718,11 +728,11 @@ u32 D3DDevice_BeginCommandBuffer_hook(u32 device_va, u32 command_buffer, u32 fla
   bw(kBufferFlags) = u32(bw(kBufferFlags)) & ~0x70u;
   for (u32 offset : {0x7Cu, 0x80u, 0x84u, 0x70u, 0x90u, 0x74u, 0x78u})
     bw(offset) = 0u;
-  d.SetW(0x3B20, 8);
+  d.SetW(0x3B24, 8);
   d.SetB(native::off::Flags1, d.B(native::off::Flags1) & 0xDF);
-  d.SetW(0x3B14, 0);
-  d.SetW(0x3B10, bw(kBufferAllocatorSize));
-  for (u32 offset = 0x35A0; offset <= 0x35B4; offset += 4)
+  d.SetW(0x3B18, 0);
+  d.SetW(0x3B14, bw(kBufferAllocatorSize));
+  for (u32 offset = 0x35A4; offset <= 0x35B8; offset += 4)
     d.SetW(offset, 0);
   native::RewindRing(d);
 
@@ -881,11 +891,19 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
     core_layout_done = true;
 #if REX_PLATFORM_SWITCH
     if (REXCVAR_GET(banjo_renut_core_layout)) {
-      const uint32_t moved = RexSetGuestThreadCoreLayout(0, 0x6, 2);
       auto *self = rex::system::XThread::GetCurrentThread();
-      RGPU_INFO("[renut] banjo_renut_core_layout: the guest main thread on core 0, the other guest threads on cores "
-                "1-2 ({} threads set); the drawing thread is {}the main thread", moved,
-                self && self->main_thread() ? "" : "NOT ");
+      // guwange-nx (2026-10-22, guwange_core_layout_drawing): when the thread drawing is not the main thread (Guwange's
+      // main only sleeps), the drawing thread takes core 0 alone instead, and the main thread joins the others.
+      if (self && !self->main_thread() && REXCVAR_GET(guwange_core_layout_drawing)) {
+        const uint32_t moved = RexSetGuestThreadCoreLayoutAlone(self, 0, 0x6, 2);
+        RGPU_INFO("[renut] banjo_renut_core_layout: the drawing thread (not the main thread) on core 0, the other "
+                  "guest threads on cores 1-2 ({} threads set; guwange_core_layout_drawing)", moved);
+      } else {
+        const uint32_t moved = RexSetGuestThreadCoreLayout(0, 0x6, 2);
+        RGPU_INFO("[renut] banjo_renut_core_layout: the guest main thread on core 0, the other guest threads on cores "
+                  "1-2 ({} threads set); the drawing thread is {}the main thread", moved,
+                  self && self->main_thread() ? "" : "NOT ");
+      }
     }
 #endif
   }
@@ -915,7 +933,7 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
     KickFence(device);
     // banjo-nx (2026-10-20, banjo_renut_game_gamma): the device's gamma ramp (StoreGamma's) for the present.
     // futari-nx: Futari's device has it at +0x3B6C (N&B's +0x3A9C).
-    Video::NoteGameGamma(device + 0x3B6C);
+    Video::NoteGameGamma(device + 0x3B70);
   }
 
   render_thread::QueueFrame([front_buffer, swap_ordinal] {
@@ -1015,10 +1033,10 @@ void D3DDevice_GetDisplayMode_hook(u32 device_va, u32 /*swap_chain*/, mapped_u32
   const native::Device d = native::DeviceAt(device_va);
   if (!d || !mode)
     return;
-  mode[0] = d.W(0x35B8);
-  mode[1] = d.W(0x35BC);
-  mode[2] = d.W(0x5504);
-  mode[3] = d.W(0x35C0);
+  mode[0] = d.W(0x35BC);
+  mode[1] = d.W(0x35C0);
+  mode[2] = d.W(0x5508);
+  mode[3] = d.W(0x35C4);
 }
 
 // void D3DDevice_BlockOnFence(DWORD Fence) [0x8228F3B0]: on the device D3D
@@ -1122,7 +1140,7 @@ std::array<u16, 1024> GammaTable(bool inverse) {
 
 // The device's gamma (+0x3A9C, red, green, blue: 256 words each) for the
 // display to pick up; the renderer presents without it.
-constexpr u32 kDeviceOffsetGammaRamp = 0x3B6C;
+constexpr u32 kDeviceOffsetGammaRamp = 0x3B70;
 
 void StoreGamma(native::Device d, const be_u16 (&corrected)[768]) {
   if (std::memcmp(corrected, d.bytes + kDeviceOffsetGammaRamp, sizeof(corrected)) == 0)
@@ -1137,7 +1155,7 @@ void StoreGamma(native::Device d, const be_u16 (&corrected)[768]) {
     d.SetW(0x5E68, d.W(0x5E68) | 0x80000000u);
   }
   std::memcpy(d.bytes + kDeviceOffsetGammaRamp, corrected, sizeof(corrected));
-  d.SetW(0x4214, d.W(0x4214) | 2);
+  d.SetW(0x4218, d.W(0x4218) | 2);
 }
 
 // D3DDevice_SetGammaRamp's work: the ramp (D3DGAMMARAMP, 3 x 256 words)
@@ -1210,6 +1228,29 @@ void D3D_CDevice_Uninitialize_hook(u32 device) {
   UninitializeDevice(native::DeviceAt(device));
 }
 
+// guwange-nx (2026-10-21): XDK 2.0.11164's async locks, which neither N&B nor
+// Futari calls (Guwange refills its dynamic vertex buffers with them).
+// D3DASYNCBLOCK D3DDevice_InsertBlockOnAsyncResources(D3DDevice*,
+//     UINT WriteCount, D3DResource* const* pWriteResourceList, UINT ReadCount,
+//     D3DResource* const* pReadResourceList, DWORD Flags) [Guwange 0x822592C8]
+// D3D takes one of 32 slots (mask +24216, table +24208), records both lists'
+// newest fences in it and makes the GPU wait at this point of the ring (a
+// scratch register, WAIT_REG_MEM on (+24200)+544, with Flags bit 0 an
+// INDIRECT_BUFFER) until D3DDevice_SignalAsyncResources. Our device has no
+// slots (those words are 0: the original wrote guest 0x10) and no GPU that
+// could run ahead of the CPU. The block is 0, which D3D's lock reads as no
+// block, and the async lock is the ordinary one (D3DVertexBuffer_AsyncLock_hook:
+// it waits for the resource's fences).
+u64 D3DDevice_InsertBlockOnAsyncResources_hook(u32 /*device*/, u32 /*write_count*/, u32 /*writes*/,
+                                               u32 /*read_count*/, u32 /*reads*/, u32 /*flags*/) {
+  return 0;
+}
+
+// void D3DDevice_SignalAsyncResources(D3DDevice*, D3DASYNCBLOCK) [Guwange
+// 0x82258ED0]: releases the slot (clears its bit, writes the word the GPU
+// waits on). Nothing waits here.
+void D3DDevice_SignalAsyncResources_hook(u32 /*device*/, u64 /*block*/) {}
+
 } // namespace
 
 namespace renut::gpu::native {
@@ -1250,10 +1291,10 @@ void SetFence(u32 device_va) {
   if (bytes[kDeviceOffsetFlags2] & kDeviceFlagImmediateFences) {
     Device d = DeviceAt(device_va);
     const u32 fence = d.W(off::FenceTag);
-    if (!d.W(0x54EC)) {
+    if (!d.W(0x54F0)) {
       if (auto *completion = GuestPtr<be_u32>(d.W(off::FenceCompletion))) {
         completion[0] = fence;
-        completion[1] = (d.W(0x3B18) & 3) | d.W(off::Ring);
+        completion[1] = (d.W(0x3B1C) & 3) | d.W(off::Ring);
       }
     }
     d.SetW(off::FenceTag, fence + 2);
@@ -1277,6 +1318,8 @@ FUTARI_RENUT_HOOK(D3DResource_GetDevice, D3DResource_GetDevice_hook);  // N&B su
 FUTARI_RENUT_HOOK(D3D_IsFusion, D3D_IsFusion_hook);  // N&B sub_82B6BF60
 FUTARI_RENUT_HOOK(D3DDevice_SetGammaRamp, D3DDevice_SetGammaRamp_hook);  // N&B sub_8264D948
 FUTARI_RENUT_HOOK(D3DDevice_SetPWLGamma, D3DDevice_SetPWLGamma_hook);  // N&B sub_8264DA18
+FUTARI_RENUT_HOOK(D3DDevice_InsertBlockOnAsyncResources, D3DDevice_InsertBlockOnAsyncResources_hook);  // Guwange sub_822592C8 (N&B: none)
+FUTARI_RENUT_HOOK(D3DDevice_SignalAsyncResources, D3DDevice_SignalAsyncResources_hook);  // Guwange sub_82258ED0 (N&B: none)
 FUTARI_RENUT_HOOK(Direct3D_CreateDevice, Direct3D_CreateDevice_hook);  // N&B sub_8264DF28
 FUTARI_RENUT_HOOK(D3DDevice_Release, D3DDevice_Release_hook);  // N&B sub_8264E080
 FUTARI_RENUT_HOOK(D3D_XenonGpu_Initialize, D3D_XenonGpu_Initialize_hook);  // N&B sub_82663208

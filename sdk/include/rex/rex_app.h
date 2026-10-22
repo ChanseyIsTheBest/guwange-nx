@@ -87,6 +87,9 @@ class SettingsDialog;
 /// @endcode
 class ReXApp : public ui::WindowedApp, public ui::WindowListener, public ui::WindowInputListener {
  public:
+  // guwange-nx (2026-10-22): a function HardExitProcess runs first (once), for what must reach the SD card before the
+  // process ends without its teardown: the PGO-instrumented build's counts. nullptr removes it.
+  static void SetBeforeHardExit(void (*fn)());
   ~ReXApp() override;
 
  protected:
@@ -278,6 +281,10 @@ class ReXApp : public ui::WindowedApp, public ui::WindowListener, public ui::Win
   // WindowedApp overrides
   bool OnInitialize() override;
   void OnDestroy() override;
+
+  // Ends the process without the runtime's teardown (logs flushed; on the Switch through libnx's exit, which asks the
+  // system to end the process). Does not return.
+  [[noreturn]] static void HardExitProcess();
 
   // WindowListener overrides
   void OnClosing(ui::UIEvent& e) override;

@@ -12,8 +12,10 @@
  * guest objects; the host side is kept per object address, keyed by the same
  * container hash.
  */
+#include <algorithm>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -23,6 +25,7 @@
 #include "renut_engine/gpu/banjo_renut_select.h"
 #include <rex/types.h>
 
+#include "renut_engine/gpu/d3d/d3d.h"
 #include "renut_engine/gpu/render/draw.h"
 #include "renut_engine/gpu/guest/guest_memory.h"
 #include "renut_engine/gpu/log.h"
@@ -33,6 +36,9 @@
 #include "renut_engine/gpu/backend/video.h"
 
 using namespace renut::gpu;
+
+// guwange-nx (2026-10-21): Guwange's D3DDevice_SetFVF, run first by D3DDevice_SetFVF_hook (N&B and Futari have none).
+REX_IMPORT(__imp__sub_8225FB78, OriginalSetFVF, void(u32, u32));
 
 namespace {
 
@@ -151,6 +157,10 @@ void BuildDeclarationLayout(VertexDeclarationRecord &declaration) {
   }
   for (u32 s = 0; s < kMaxVertexStreams; ++s)
     mix(declaration.layout.streams[s].host_stride);
+  // guwange-nx (2026-10-21, banjo_deko3d_bound_fetch_spec): the guest types too, endian and all: the pipeline key's
+  // bound fetch types come from them, and a key reused by its layout hash (banjo_renut_chain_reuse) must carry them.
+  for (const GuestVertexElement &e : declaration.elements)
+    mix((uint64_t(u32(e.Type)) << 16) | (uint64_t(e.Usage) << 8) | e.UsageIndex);
   declaration.layout_hash = hash;
 }
 
@@ -427,11 +437,60 @@ void D3DVertexShader_Bind_hook(u32 shader_va, u32 /*flags*/, u32 declaration_va,
   });
 }
 
+// guwange-nx (2026-10-21): void D3DDevice_SetFVF(D3DDevice*, DWORD FVF)
+// [Guwange 0x8225FB78; N&B and Futari have none]. D3D keeps the FVF (+12608),
+// builds its declaration inside the device (+12368: the element count at +24,
+// the elements from +52, as D3DDevice_CreateVertexDeclaration lays one out)
+// and sets that (+0x2ED8). Draws know declarations by their records, so the
+// original runs and the device then gets a record with the same elements
+// instead: one per FVF code, made the first time (records live for good).
+constexpr u32 kDeviceOffsetFvfDeclaration = 12368;
+constexpr u32 kDeclarationOffsetCount = 24;
+constexpr u32 kDeclarationOffsetElements = 52;
+std::mutex g_fvf_mutex;
+std::unordered_map<u32, u32> g_fvf_declarations;  // FVF code -> record
+
+void D3DDevice_SetFVF_hook(u32 device_va, u32 fvf) {
+  OriginalSetFVF(device_va, fvf);
+  auto *field = GuestPtr<be_u32>(device_va + d3d::kDeviceOffsetVertexDeclaration);
+  if (!field)
+    return;
+  u32 record_va = 0;
+  {
+    std::lock_guard lock(g_fvf_mutex);
+    if (auto it = g_fvf_declarations.find(fvf); it != g_fvf_declarations.end()) {
+      record_va = it->second;
+    } else {
+      const u32 built = device_va + kDeviceOffsetFvfDeclaration;
+      const auto *count = GuestPtr<const be_u32>(built + kDeclarationOffsetCount);
+      const auto *elements = GuestPtr<const GuestVertexElement>(built + kDeclarationOffsetElements);
+      auto *declaration = count && elements
+                              ? CreateRecord<VertexDeclarationRecord>(RecordKind::VertexDeclaration)
+                              : nullptr;
+      if (declaration) {
+        declaration->x360.resource.Common =
+            kCommonD3DCreated | u32(d3d::ResourceType::VertexDeclaration);
+        declaration->x360.resource.ReferenceCount = 1u;
+        for (u32 i = 0; i < std::min<u32>(u32(*count), 64); ++i)
+          declaration->elements.push_back(elements[i]);
+        BuildDeclarationLayout(*declaration);
+        record_va = declaration->self_va;
+        RGPU_INFO("SetFVF {:#x}: declaration record {:#010x}, {} elements", fvf, record_va,
+                  declaration->elements.size());
+      }
+      g_fvf_declarations.emplace(fvf, record_va);
+    }
+  }
+  if (record_va)
+    *field = record_va;
+}
+
 } // namespace
 
 FUTARI_RENUT_HOOK(D3DDevice_CreateVertexShader, D3DDevice_CreateVertexShader_hook);  // N&B sub_8264E8B0
 FUTARI_RENUT_HOOK(D3DDevice_CreatePixelShader, D3DDevice_CreatePixelShader_hook);  // N&B sub_8264E6A8
 FUTARI_RENUT_HOOK(D3DDevice_CreateVertexDeclaration, D3DDevice_CreateVertexDeclaration_hook);  // N&B sub_8264EA90
 FUTARI_RENUT_HOOK(D3DVertexShader_Bind, D3DVertexShader_Bind_hook);  // N&B sub_82657048
+FUTARI_RENUT_HOOK(D3DDevice_SetFVF, D3DDevice_SetFVF_hook);  // Guwange sub_8225FB78 (N&B: none)
 FUTARI_RENUT_HOOK(XGRegisterVertexShader, XGRegisterVertexShader_hook);  // N&B sub_8264E7B8
 FUTARI_RENUT_HOOK(XGRegisterPixelShader, XGRegisterPixelShader_hook);  // N&B sub_8264E670

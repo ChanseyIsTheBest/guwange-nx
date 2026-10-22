@@ -1,12 +1,12 @@
 # Profile-guided optimisation, step 2 of 3 (2026-10-08). Step 1 is the instrumented NRO (build_switch.ps1 with
-# -Pgo generate), played on the console: it writes pgo/futari_pgo_<N>.stream next to the NRO (one per session, see
-# app/src/futari_pgo.cpp). Copy that pgo folder to the PC and run this: every session's counts are added into the .gcda
+# -Pgo generate), played on the console: it writes pgo/guwange_pgo_<N>.stream next to the NRO (one per session, see
+# app/src/guwange_pgo.cpp). Copy that pgo folder to the PC and run this: every session's counts are added into the .gcda
 # files of the profile folder (gcov-tool merge-stream), then their summary is filled in (tools/pgo_summary.py: the
 # stream API writes it as zero). Step 3: build_switch.ps1 -Pgo use.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\win\pgo_merge.ps1 <folder with the .stream files> [-Out <profile folder>]
 #
-# The profile folder is pgo\ at the root of the repository (the build's FUTARI_PGO_DIR): one .gcda per object, named by
+# The profile folder is pgo\ at the root of the repository (the build's GUWANGE_PGO_DIR): one .gcda per object, named by
 # the object's path in out\switch with # for each \ (GCC's names with -fprofile-prefix-path). The streams name the files
 # they fill: an instrumented NRO built since then names the profile folder of the PC that built it (merge on that PC);
 # the v1.0.0 instrumented NRO named the files next to the objects of out\switch, which this script moves to the profile
@@ -21,8 +21,8 @@ $build = Join-Path $root 'out\switch'
 if (-not $Out) { $Out = Join-Path $root 'pgo' }
 $tool = 'C:\devkitPro\devkitA64\bin\aarch64-none-elf-gcov-tool.exe'
 if (-not (Test-Path $tool)) { throw "gcov-tool not found: $tool" }
-$files = Get-ChildItem -Path $Streams -Filter 'futari_pgo_*.stream' -File | Sort-Object Name
-if (-not $files) { throw "no futari_pgo_*.stream in $Streams" }
+$files = Get-ChildItem -Path $Streams -Filter 'guwange_pgo_*.stream' -File | Sort-Object Name
+if (-not $files) { throw "no guwange_pgo_*.stream in $Streams" }
 New-Item -ItemType Directory -Force $Out | Out-Null
 $Out = (Resolve-Path $Out).Path
 if (Get-ChildItem -Path $Out -Filter *.gcda -File | Select-Object -First 1) {

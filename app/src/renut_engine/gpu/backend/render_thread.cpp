@@ -56,6 +56,10 @@ REXCVAR_DEFINE_BOOL(banjo_renut_batch_clock, true, "Banjo/Enhancements",
 
 REXCVAR_DECLARE(bool, futari_late_input);  // futari-nx: src/native/futari_native_frame.cpp
 
+namespace guwange::late_input {
+std::string Report();  // src/guwange_late_input.cpp
+}  // namespace guwange::late_input
+
 namespace renut::gpu::render_thread {
 
 namespace {
@@ -395,6 +399,8 @@ void InstallLateInput() {
 }
 
 std::string LateInputReport() {
+  // guwange-nx: Guwange's own late input when it is the one installed (src/guwange_late_input.cpp).
+  if (REXCVAR_GET(futari_late_input)) return guwange::late_input::Report();
   const uint64_t frames = g_delay_frames.exchange(0, std::memory_order_relaxed);
   const uint64_t total = g_delay_total_us.exchange(0, std::memory_order_relaxed);
   return frames ? fmt::format("late input: the first controller read of a frame delayed {:.1f} ms on average ({} "

@@ -192,7 +192,13 @@ u32 XexGetProcedureAddress_entry(mapped_void hmodule, u32 ordinal, mapped_u32 ou
       *out_function_ptr = 0;
       result = X_STATUS_DRIVER_ENTRYPOINT_NOT_FOUND;
     }
+  } else {
+    // guwange-nx (2026-10-21): a handle no module answers to failed without a word.
+    REXKRNL_WARN("ERROR: XexGetProcedureAddress: no module for handle {:#x} (ordinal {:#x}, caller {:#x})",
+                 hmodule.guest_address(), ordinal, caller_address);
   }
+  REXKRNL_IMPORT_RESULT("XexGetProcedureAddress", "{:#x} hmodule={:#x} ordinal={:#x} ptr={:#x} caller={:#x}", result,
+                        hmodule.guest_address(), ordinal, result ? 0u : uint32_t(*out_function_ptr), caller_address);
 
   return result;
 }

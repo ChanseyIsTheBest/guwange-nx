@@ -1551,3 +1551,36 @@ extern "C" uint32_t RexSetGuestThreadCoreLayout(int main_core, uint32_t others_m
   return 0;
 #endif
 }
+
+// guwange-nx (2026-10-22): as RexSetGuestThreadCoreLayout, with 'alone' (an XThread*, the drawing thread) on
+// 'alone_core' in place of the guest main thread, which joins the others. Guwange's main thread only sleeps
+// (tools/spin_forever.py) while a thread of its own draws and another runs the arcade board: the layout for Futari kept
+// core 0 for the sleeping thread and put both working ones on cores 1-2 preferring 2 (a console profile: 73 % and 50 %
+// of the one core, 48 fps, a core idle).
+extern "C" uint32_t RexSetGuestThreadCoreLayoutAlone(void* alone, int alone_core, uint32_t others_mask,
+                                                     int others_preferred) {
+#if REX_PLATFORM_SWITCH
+  using rex::system::XThread;
+  g_guest_core_preferred.store(others_preferred, std::memory_order_relaxed);
+  g_guest_core_mask.store(others_mask, std::memory_order_release);
+  auto* kernel = rex::system::kernel_state();
+  if (!kernel) return 0;
+  uint32_t moved = 0;
+  for (auto& thread : kernel->object_table()->GetObjectsByType<XThread>()) {
+    if (!thread || !thread->is_guest_thread() || !thread->thread()) continue;
+    if (thread.get() == static_cast<XThread*>(alone)) {
+      thread->thread()->set_affinity_mask(uint64_t(1) << alone_core);
+    } else if (!RexSwitchSetThreadMaskOf(thread->thread()->native_handle(), others_preferred, others_mask)) {
+      thread->thread()->set_affinity_mask(others_mask);
+    }
+    ++moved;
+  }
+  return moved;
+#else
+  (void)alone;
+  (void)alone_core;
+  (void)others_mask;
+  (void)others_preferred;
+  return 0;
+#endif
+}

@@ -1,7 +1,7 @@
-// Mushihimesama Futari Ver 1.5 (Xbox 360): application entry point.
+// Guwange (Xbox Live Arcade): application entry point.
 
-#include "generated/default/futari_init.h"
+#include "generated/default/guwange_init.h"
 
-#include "futari_app.h"
+#include "guwange_app.h"
 
-REX_DEFINE_APP(futari, FutariApp::Create)
+REX_DEFINE_APP(guwange, GuwangeApp::Create)

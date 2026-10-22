@@ -1,3 +1,4 @@
+// guwange-nx: device offsets translated to Guwange's XDK (tools/renut_guwange_layout.py)
 // futari-nx (2026-10-19): the guest's vertical blank with Renut's renderer.
 //
 // Renut's renderer has no GPU and so no graphics interrupt, and the SDK runs no vsync thread without its own graphics
@@ -49,6 +50,10 @@
 #include "me/me_platform_compat.h"  // RexSwitchPinCurrentThreadToCore and the priority helper
 #endif
 
+namespace guwange::late_input {
+void NoteVblank();  // src/guwange_late_input.cpp
+}  // namespace guwange::late_input
+
 REXCVAR_DECLARE(bool, futari_vblank_sleep_exact);   // src/me/me_native_system.cpp
 REXCVAR_DECLARE(bool, futari_vblank_display_sync);  // likewise
 REXCVAR_DECLARE(int32_t, futari_vblank_delay_us);   // likewise
@@ -69,9 +74,9 @@ REXCVAR_DEFINE_INT32(futari_renut_vblank_core, 2, "Futari/Renut",
 namespace futari::renut_vblank {
 namespace {
 
-constexpr uint32_t kVblankHandler = 0x820A4C08u;  // Direct3D's vblank handler (device)
-constexpr uint32_t kVblankHandlerWords = 69;
-constexpr uint64_t kVblankHandlerHash = 0x49BA3A1B1EAA1B6Eull;
+constexpr uint32_t kVblankHandler = 0x82264E88u;  // Direct3D's vblank handler (device)
+constexpr uint32_t kVblankHandlerWords = 70;
+constexpr uint64_t kVblankHandlerHash = 0x7D733D9A9AF2BAAEull;
 #if REX_PLATFORM_SWITCH
 constexpr int kVblankThreadPriority = 0x2C;  // the render thread's (banjo_renut_tuning.cpp kRenderThreadPriority)
 #endif
@@ -97,6 +102,8 @@ bool SameHandler(rex::system::KernelState* kernel) {
 
 // One vblank: Direct3D's handler on this guest thread, when the title's device exists.
 void Vblank() {
+  rex::latency::TraceEvent("guest vblank");  // guwange-nx: the latency trace
+  ::guwange::late_input::NoteVblank();        // guwange-nx: futari_late_input's vblank time
   const uint32_t device = renut::gpu::native::GlobalDevice();
   if (!device) return;
   auto* thread = rex::system::XThread::GetCurrentThread();

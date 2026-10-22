@@ -18,6 +18,8 @@
  * D3D does; the GPU cache flushes they would queue are left out (the host
  * reads guest memory directly).
  */
+// guwange-nx: device offsets translated to Guwange's XDK (tools/renut_guwange_layout.py)
+#include <rex/frame_latency.h>
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -49,7 +51,7 @@ using namespace renut::gpu;
 // sub_82088CE0 (N&B's 0x822399D8); a game core's copy frees its headers from
 // the core's own heap, so the core's forwarding names its copy for the call
 // (FutariRenutCallWithFree, banjo_renut_select.cpp).
-REX_IMPORT(__imp__sub_82088CE0, DefaultXMemFree, void(u32, u32));
+REX_IMPORT(__imp__sub_822522C8, DefaultXMemFree, void(u32, u32));
 namespace renut::gpu {
 thread_local PPCFunc *g_core_xmemfree = nullptr;
 }  // namespace renut::gpu
@@ -106,7 +108,7 @@ void FreeHeader(u32 va) {
 // the alignment from bits 24-27, the protection from bits 28-29), then
 // XPhysicalAlloc (0x82716060), which asks the kernel. 0 on failure.
 // futari-nx: Futari's XPhysicalAlloc is sub_82089ED8 and its flag 0x821ED308 (N&B's 0x82F39E34).
-constexpr u32 kGameNoLargePagesVa = 0x821ED308;  // XPhysicalAlloc drops MEM_LARGE_PAGES while set
+constexpr u32 kGameNoLargePagesVa = 0x8269748C;  // XPhysicalAlloc drops MEM_LARGE_PAGES while set
 
 u32 AllocPhysical(u32 size, u32 attributes) {
   static constexpr u32 kAlignment[16] = {4,    4,    4,     8,     16,    32,     64,     128,
@@ -131,7 +133,7 @@ void FreePhysical(u32 va) {
 
 // The GPU format table (word_820052F8): per D3D format low 6 bits, bits per
 // pixel in the low byte, flags in the high one.
-constexpr u32 kFormatTable = 0x82003430;  // futari-nx: Futari's (N&B's 0x820052F8)
+constexpr u32 kFormatTable = 0x82008620;  // futari-nx: Futari's (N&B's 0x820052F8)
 
 u16 FormatTableEntry(u32 format) {
   const auto *table = GuestPtr<const be_u16>(kFormatTable);
@@ -144,7 +146,7 @@ u32 FormatBitsPerPixel(u32 format) {
 
 // The word at 0x82FA36C8: set while a depth surface owns the HiZ memory. futari-nx: Futari's is 0x821ED330
 // (CreateSurface sub_8209D400 and D3DResource_Destroy sub_820A3E98).
-constexpr u32 kHiZOwnerVa = 0x821ED330;
+constexpr u32 kHiZOwnerVa = 0x826974A4;
 
 u32 LoadU32(u32 va) {
   const auto *p = GuestPtr<const be_u32>(va);
@@ -701,6 +703,15 @@ u32 D3DVertexBuffer_Lock_hook(u32 buffer, u32 /*offset*/, u32 /*size*/, u32 flag
   return LockResource(buffer, 0, base, 0, base, LoadU32(buffer + 0x1C) & 0x3FFFFFC, flags);
 }
 
+// guwange-nx (2026-10-21): void *D3DVertexBuffer_AsyncLock(D3DVertexBuffer*,
+//     D3DASYNCBLOCK, UINT OffsetToLock, UINT SizeToLock, DWORD Flags)
+//     [Guwange 0x822551F8; N&B and Futari have none]: D3D's lock with the block
+// instead of the resource's fences. The blocks are 0 here
+// (D3DDevice_InsertBlockOnAsyncResources_hook, device.cpp): the ordinary lock.
+u32 D3DVertexBuffer_AsyncLock_hook(u32 buffer, u64 /*block*/, u32 offset, u32 size, u32 flags) {
+  return D3DVertexBuffer_Lock_hook(buffer, offset, size, flags);
+}
+
 // void *D3DIndexBuffer_Lock(D3DIndexBuffer*, UINT OffsetToLock, UINT SizeToLock,
 //     DWORD Flags) [0x82654F90]
 u32 D3DIndexBuffer_Lock_hook(u32 buffer, u32 /*offset*/, u32 /*size*/, u32 flags) {
@@ -818,6 +829,7 @@ void D3DVertexBuffer_Unlock_hook(u32 buffer) {
 
 // void D3DSurface_UnlockRect(D3DSurface*) [0x826561E0]
 void D3DSurface_UnlockRect_hook(u32 surface) {
+  rex::latency::TraceEvent("surface unlocked (a texture the CPU wrote)");  // guwange-nx: the latency trace
   const u32 texture = LoadU32(surface + 0x18);
   D3D_UnlockResource_hook(texture, LoadU32(texture + 0x20) & ~0xFFFu,
                           LoadU32(texture + 0x30) & ~0xFFFu);
@@ -1249,6 +1261,7 @@ u32 D3DVolumeTexture_GetVolumeLevel_hook(u32 texture, u32 level) {
 
 // void D3DArrayTexture_UnlockRect(D3DArrayTexture*, ...) [0x82655D88]
 void D3DArrayTexture_UnlockRect_hook(u32 texture) {
+  rex::latency::TraceEvent("array texture unlocked (a texture the CPU wrote)");  // guwange-nx: the latency trace
   D3D_UnlockResource_hook(texture, LoadU32(texture + 0x20) & ~0xFFFu,
                           LoadU32(texture + 0x30) & ~0xFFFu);
 }
@@ -1710,6 +1723,7 @@ FUTARI_RENUT_HOOK(D3DSurface_UnlockRect, D3DSurface_UnlockRect_hook);  // N&B su
 FUTARI_RENUT_HOOK(D3D_LockResource, LockResource_hook);  // N&B sub_82654968
 FUTARI_RENUT_HOOK(D3DVertexBuffer_Lock, D3DVertexBuffer_Lock_hook);  // N&B sub_82654E80
 FUTARI_RENUT_HOOK(D3DIndexBuffer_Lock, D3DIndexBuffer_Lock_hook);  // N&B sub_82654F90
+FUTARI_RENUT_HOOK(D3DVertexBuffer_AsyncLock, D3DVertexBuffer_AsyncLock_hook);  // Guwange sub_822551F8 (N&B: none)
 FUTARI_RENUT_HOOK(D3D_LockSurface, D3D_LockSurface_hook);  // N&B sub_82655838
 FUTARI_RENUT_HOOK(D3D_Lock2DSurface, D3D_Lock2DSurface_hook);  // N&B sub_82655908
 FUTARI_RENUT_HOOK(D3D_Lock3DSurface, D3D_Lock3DSurface_hook);  // N&B sub_826559A0

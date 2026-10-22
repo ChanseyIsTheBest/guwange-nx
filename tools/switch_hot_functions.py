@@ -7,7 +7,7 @@ profiler then pauses each busy thread 1000 times a second and writes, every 10 s
 (out/switch/futari.map, written by the Switch link) saying which function and which object (game core) each address
 belongs to:
 
-  python tools/switch_hot_functions.py rex_profile.log [--map out/switch/futari.map] [--top 40] [--thread mainThr]
+  python tools/switch_hot_functions.py rex_profile.log [--map out/switch/guwange.map] [--top 40] [--thread mainThr]
       [--from-report 3]
 
 Guest functions show as sub_XXXXXXXX with the module they were recompiled from (default = default.xex; the game
@@ -78,7 +78,7 @@ def module_of(obj):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('profile')
-    ap.add_argument('--map', default=os.path.join(ROOT, 'out', 'switch', 'futari.map'))
+    ap.add_argument('--map', default=os.path.join(ROOT, 'out', 'switch', 'guwange.map'))
     ap.add_argument('--top', type=int, default=40)
     ap.add_argument('--thread', default='', help='only threads whose name contains this')
     ap.add_argument('--from-report', type=int, default=0, help='skip the first N 10-s reports (boot, menus)')

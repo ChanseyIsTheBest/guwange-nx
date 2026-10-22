@@ -430,6 +430,8 @@ def address_taken(gen, image, starts, bodies):
         paths = [root] if os.path.isfile(root) else [os.path.join(d, f) for d, _, fs in os.walk(root) for f in fs
                                                       if f.endswith(('.cpp', '.h', '.hpp', '.inc', '.c', '.toml', '.txt'))]
         for path in paths:
+            if futari_modules.project.unbuilt(path):  # guwange-nx: another port's unbuilt sources
+                continue
             try:
                 text = open(path, encoding='utf-8', errors='ignore').read()
             except OSError:

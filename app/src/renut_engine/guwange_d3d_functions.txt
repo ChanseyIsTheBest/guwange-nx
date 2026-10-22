@@ -1,0 +1,111 @@
+# Guwange's Direct3D functions for Renut's renderer (XDK 2.0.11164): <Renut name> <default.xex address> <why>.
+# Futari's list (futari_d3d_functions.txt) in its order; d3d_match scores are against Futari's default.xex
+# (out/d3d_match_default.txt), each pair also compared instruction by instruction with Futari's function: equal
+# except branch targets, globals and the CDevice words Futari -> Guwange +4 (0x359C-0x552B, tools/renut_guwange_layout.py)
+# unless the line says otherwise. A name Guwange's default.xex lacks is a comment line (no hook site).
+# Guwange's four game cores have no Direct3D of their own (out/guwange_core_d3d.txt).
+D3D_SetSurfaceClip                           82255510  d3d_match 1.00 (next 0.24); Futari's 188 instructions exactly; 7 sites
+D3DDevice_SetScissorRect                     82257AC8  d3d_match 1.00 (next 0.30); Futari's exactly (the RECT at +0x3234)
+D3DDevice_SetIndices                         82257D68  d3d_match 1.00 (next 0.36); index buffer +12612 as Futari's, ring words 13732/13736 -> 13736/13740; 13 sites
+D3D_SetViewport                              82258118  d3d_match 1.00 (next 0.36)
+D3D_SetSurfaceInfo                           82258420  d3d_match 1.00 (next 0.16)
+D3DDevice_SetRenderTarget                    822584B0  d3d_match 1.00 (next 0.44); Futari's exactly (targets +0x3148.., tiling surfaces +0x3268); 82258AD8 is a one-instruction thunk to it
+D3DDevice_SetDepthStencilSurface             82258800  d3d_match 1.00 (next 0.44); Futari's exactly (+0x3158)
+D3D_CleanupGprAllocationSetup                8225D8E8  d3d_match 1.00 (next 0.12)
+XGRegisterPixelShader                        8225DDE0  d3d_match 1.00 (next 0.47)
+D3DDevice_SetPixelShader                     8225DE18  d3d_match 1.00 (next 0.89); stores the shader at +12868 as Futari's (only the ring words +4)
+D3DDevice_SetVertexShader                    8225E020  d3d_match 1.00 (next 0.89); stores the shader at +12872 as Futari's (only the ring words +4)
+D3DDevice_SetVertexDeclaration               8225E238  d3d_match 1.00 (next 0.83); Futari's 5 instructions exactly (+11992); 12 sites
+D3DDevice_CreateVertexDeclaration            8225E340  d3d_match 1.00 (next 0.65); 13 sites
+D3DDevice_SetShaderGPRAllocation             8225E3C0  checked: d3d_match 0.88 (next 0.26); Futari's, its GPR table +13992.. +4 and two loads swapped
+D3DDevice_CreatePixelShader                  8225F8A0  d3d_match 1.00 (next 0.63); its counter 0x821ED324 -> 0x826974A8
+XGRegisterVertexShader                       8225F990  d3d_match 1.00 (next 0.25)
+D3DDevice_CreateVertexShader                 8225FA88  d3d_match 1.00 (next 0.63); its counter 0x821ED328 -> 0x826974AC
+D3D_GetTextureDimensions                     82259628  d3d_match 1.00 (next 0.85); Futari's exactly
+D3D_GetGpuTextureDimensions                  822596C0  d3d_match 1.00 (next 0.85); Futari's exactly
+D3DArrayTexture_UnlockRect                   82259760  d3d_match 1.00 (next 0.83); Futari's 5 instructions exactly, before SurfaceUnlockRect as in Futari
+D3DSurface_UnlockRect                        82259778  d3d_match 1.00 (next 0.83); Futari's 6 instructions exactly; 10 sites
+D3D_BlockSizeOfGpuFormat                     82259800  d3d_match 1.00 (next 0.26)
+D3D_GetMaxMipLevels                          82259898  d3d_match 1.00 (next 0.17)
+D3D_FindTextureSize                          82259A40  d3d_match 1.00 (next 0.21); its format table 0x82003430 -> 0x82008620
+D3D_GetMipTailLevelOffsetCoords              82259DB0  d3d_match 1.00 (next 0.16)
+D3D_Lock2DSurface                            8225AA98  d3d_match 1.00 (next 0.25); the only caller of the lock helper 8225A9C0 (Futari's 8209C900)
+# D3D_Lock3DSurface: not in Guwange: d3d_match's 0.53 is Lock2DSurface 8225AA98; no function has its instructions (exact or with immediates ignored); the lock helper 8225A9C0 has one caller, Lock2DSurface; Futari's only caller, D3DVolume_LockBox, is absent too
+# D3DBaseTexture_GetLevelCount: not in Guwange: no function has its 4 instructions (+44 >> 6 & 15, + 1), exact or loose (d3d_match's 0.80, 8249CA98, reads +4: game code); its one Futari caller, D3DX's 820B5B70, has no Guwange counterpart (best 0.14)
+# D3DArrayTexture_GetArraySize: Futari's fold of D3DBaseTexture_GetLevelCount (SAME ADDRESS AS it there): absent with it
+D3DLineTexture_LockRect                      8225B148  d3d_match 1.00 (next 0.50); Futari's 7 instructions exactly
+D3DDevice_CreateTexture                      8225B178  d3d_match 1.00 (next 0.30); Futari's exactly; 14 sites
+D3DDevice_CreateSurface                      8225B298  d3d_match 1.00 (next 0.31); the HiZ owner 0x821ED330 -> 0x826974A4
+D3DSurface_GetDesc                           8225B3D0  d3d_match 1.00 (next 0.66); Futari's exactly
+D3DSurface_LockRect                          8225B468  d3d_match 1.00 (next 0.56); Futari's 9 instructions exactly
+D3DVolume_GetDesc                            8225B4B0  d3d_match 1.00 (next 0.76); Futari's exactly
+# D3DVolume_LockBox: not in Guwange: no function has its instructions (a tail call of Lock3DSurface); Volume_GetDesc 8225B4B0 runs straight into SetTexture 8225B4F8, where Futari has LockBox between them; its Futari caller (D3DX's 820BEAB0) has no counterpart (best 0.24)
+# D3DDevice_EndIndexedVertices: not in Guwange: no function moves +13652 (BeginVertices' ring end 0x3554) into m_pRing +0x30; d3d_match's 821931D0 copies +72 to +4 (game code, never called); Guwange draws through DrawVertices / DrawIndexedVertices (below), not BeginVertices
+# D3DDevice_BeginVertices: not in Guwange: d3d_match's 0.74, 82262DF0, is D3DDevice_DrawVertices (N&B's DrawVertices 0.96: 65535-vertex chunks, no inline data); no function stores +13652/13656/13664 and none of AllocateInlineData 822697C0's 10 call sites is a draw (Resolve, KickOff, the clear's rectangles 82265DA0, the ring's own, EndTiling's 82271C30)
+# D3DVertexShader_Bind: not in Guwange: d3d_match's 0.22 is XGRegisterVertexShader 8225F990; no other function edits a shader's +872/+896 fetch patch (only XGRegisterVertexShader and the draws' bind 822737B8 = Futari's 8209FC30 touch them); Futari's 22 calls are its game's (8216AD98, 8217FAA8)
+D3DDevice_ClearF                             82266EE8  d3d_match 1.00 (next 0.40); Futari's exactly
+D3DDevice_Clear                              82267010  d3d_match 1.00 (next 0.37)
+D3DDevice_Resolve                            82263E00  checked: d3d_match 0.77 (next 0.33); 0.88 aligned with Futari's 820A2280 (1030 vs 961 instructions: 11164 adds a format-61 path and a BlockSizeOfGpuFormat call); Present 82265CA0, EndTiling 8225BC88 and the game call it
+D3DResource_GetType                          82253E08  d3d_match 1.00 (next 0.43); Futari's exactly
+D3DResource_AddRef                           82254100  d3d_match 1.00 (next 0.84); Futari's exactly; 11 sites
+D3DDevice_EndExport                          82254960  d3d_match 1.00 (next 0.20); export words +13712.. as Futari's
+D3DResource_Release                          82255128  d3d_match 1.00 (next 0.84); Futari's exactly; 64 sites
+D3D_CBlocker_Check                           82258BF0  d3d_match 1.00 (next 0.27); Futari's exactly
+D3DDevice_Release                            82258D18  d3d_match 1.00 (next 0.70); Futari's exactly
+D3DDevice_UnsetAll                           82258DC0  d3d_match 1.00 (next 0.29); the automatic surfaces 15032/15040 -> 15036/15044
+Direct3D_CreateDevice                        822591F0  d3d_match 1.00 (next 0.41); Futari's exactly: allocates 24,320 bytes, the type-2 flag at +10940, behaviour flags at +24192; one caller (821EED98, a retry)
+D3DDevice_Swap                               82265638  d3d_match 1.00 (next 0.14); swap count 16768 -> 16772, present fence 15148 -> 15152, gamma +15212 -> +15216; new at its end: 82275E60 calls the pointer at +13724 if set (Guwange's inserted word, zeroed by the hardware init)
+# D3DDevice_GetDeviceCaps: not in Guwange: no function copies a constant D3DCAPS9 out (Futari: 304 bytes from 0x82003800, a tail call of memcpy); the table's bytes are nowhere in Guwange's image; its Futari caller (D3DX's 820B54F0) has no counterpart (best 0.16)
+D3D_CDevice_AllocateInlineData               822697C0  d3d_match 1.00 (next 0.40); command buffer 13724 -> 13728, ring allocator 15112.. +4
+D3DDevice_BlockOnFence                       82269978  d3d_match 1.00 (next 0.72); VdGlobalDevice slot 0x820005F8 -> 0x82000874
+D3D_CDevice_KickOffSegment                   8226A528  d3d_match 1.00 (next 0.24); 13724/13744/15136 -> +4
+D3D_CDevice_KickOff                          8226A6B0  d3d_match 1.00 (next 0.37); 106 sites
+D3DDevice_IsFencePending                     8226A7E8  d3d_match 1.00 (next 0.71)
+D3DDevice_SetPredication                     8225B7A8  d3d_match 1.00 (next 0.40); Futari's exactly (+0x3254..+0x325C)
+# Futari's hand-added names (2026-10-19), in its order:
+# D3DDevice_DrawVerticesUP: not in Guwange: Futari's is BeginVertices + memcpy + the ring end; no function has its instructions (d3d_match's 0.50, 8222EEE8, is game code, never called) and BeginVertices is absent
+D3D_RingBufferDeviceAllocate                 82269590  d3d_match 1.00 (next 0.15); the ring allocator 15112..15144 +4
+D3D_CDevice_BeginRingBig                     8226A8E0  d3d_match 1.00 (next 0.45); Futari's exactly
+D3DDevice_SetRingBufferParameters            8226AA28  d3d_match 1.00 (next 0.15); called by the hardware init 8226CD58
+D3D_SynchronizeToPresentationInterval        82265208  d3d_match 1.00 (next 0.28); present interval 13804 -> 13808
+D3D_ResetAllState                            82258020  d3d_match 1.00 (next 0.43); Futari's exactly
+D3DDevice_SetScreenExtentQueryMode           82267130  d3d_match 1.00 (next 0.81); Futari's exactly
+D3DDevice_SetViewport                        82258380  d3d_match 1.00 (next 0.42); Futari's exactly
+D3DDevice_SetTexture                         8225B4F8  d3d_match 1.00 (next 0.42); only the ring words +4; 17 sites
+D3DDevice_SetStreamSource                    82257BC0  d3d_match 1.00 (next 0.42); stride byte at +0x31A0 as Futari's; 33 sites
+D3D_AlignTextureDimensions                   82259920  d3d_match 1.00 (next 0.18); Futari's exactly
+D3D_CDevice_BlockOnFence                     822698A8  d3d_match 1.00 (next 0.42); Futari's exactly (+10896, +10908)
+D3DResource_Destroy                          82254BC0  d3d_match 1.00 (next 0.26); HiZ owner 0x826974A4, VdGlobalDevice slot 0x82000874
+
+# Guwange's own draw path, not in Futari's list (Futari draws through BeginVertices / DrawVerticesUP; Guwange through
+# vertex and index buffers, D3DX effects and predicated tiling). Found with d3d_match against N&B's Direct3D
+# (banjo-nx's reNut names, out/renut_image.bin) and compared with N&B's instructions; mapped since 2026-10-21 (the user: the vertex/index buffer path for the Switch renderer).
+D3DDevice_DrawVertices                       82262DF0  N&B d3d_match 0.96 (next 0.69): N&B's +12122 -> +12298, +13256 -> +13436; calls the bind 822737B8; 3 sites
+D3DDevice_DrawIndexedVertices                822631E0  N&B d3d_match 0.94 (next 0.69): index buffer +12612; the game's draws (8220C410: SetStreamSource, SetIndices, this); 9 sites
+D3DDevice_CreateVertexBuffer                 822541E0  N&B d3d_match 1.00 (next 0.68), N&B's instructions exactly; 14 sites
+D3DDevice_CreateIndexBuffer                  822542B8  N&B d3d_match 1.00 (next 0.68), N&B's instructions exactly; 6 sites
+D3DVertexBuffer_Lock                         822551A8  N&B d3d_match 1.00 (next 0.80), N&B's instructions exactly; 11 sites
+D3DVertexBuffer_Unlock                       822542A8  N&B d3d_match 1.00 (next 0.50), N&B's instructions exactly; 16 sites
+D3DIndexBuffer_Lock                          82255248  N&B's 18 instructions exactly (d3d_match's 0.80, 822544D0, is a 226-instruction function); 7 sites
+D3DDevice_BeginTiling                        8225B918  N&B d3d_match 0.59 (11164 rewrote it): tile count +12924, rects +12928, origins +13172, extent +13356..13364; 2 sites
+D3DDevice_EndTiling                          8225BC88  N&B d3d_match 0.74: tile count +12924, clear colour +13376..13396, calls Resolve 82263E00; 2 sites
+D3DDevice_GetDisplayMode                     82267108  N&B d3d_match 1.00: N&B's with +13756/13760/21768/13764 (Futari 0x35B8.. +4); 1 site
+D3DDevice_AddRef                             82258BD8  N&B's 5 instructions (+60), one load reordered; 3 sites
+D3DDevice_AcquireThreadOwnership             82258D70  N&B d3d_match 0.94 (+10888); 3 sites
+D3DDevice_ReleaseThreadOwnership             82258DB0  N&B d3d_match 1.00, exactly; 3 sites
+D3DConstantBuffer_Unlock                     82254368  N&B d3d_match 1.00, exactly; 7 sites
+D3D_Get2DSurfaceDesc                         8225A2D8  N&B d3d_match 1.00 (next 0.97 is Get3DSurfaceDesc 8225A3D8), exactly; 8225B170 is a one-instruction thunk to it
+D3D_Get3DSurfaceDesc                         8225A3D8  N&B's instructions exactly
+D3DDevice_InsertCallback                     8226A9D0  N&B d3d_match 0.86 (two loads reordered); 2 sites
+D3DDevice_Present                            82265CA0  N&B d3d_match 0.66 (Futari's 820A5A68): Resolve then Swap; the game calls it once
+# XDK 2.0.11164's async locks (neither Futari nor N&B calls them; the hooks are guwange-nx's, gpu/d3d/hooks): Guwange's
+# dynamic buffer refill sub_8220B960 takes a block for its vertex/index buffers, async-locks, unlocks and signals
+# before it draws. Identified by their work: the 32-slot mask +24216 and table +24208, scratch register + WAIT_REG_MEM
+# on (+24200)+544 + INDIRECT_BUFFER; the lock core sub_82254DE0 reads the block's slot fence when the block is not 0.
+D3DDevice_InsertBlockOnAsyncResources         822592C8  (device, write count, writes, read count, reads, flags) -> u64 block; 1 site (sub_8220B960)
+D3DDevice_SignalAsyncResources                82258ED0  (device, block): clears the slot bit, writes (+24200)+544; 1 site
+D3DVertexBuffer_AsyncLock                     822551F8  (vb, block, offset, size, flags): VertexBuffer_Lock's 20 instructions with the block in r4; 2 sites (sub_8220A310)
+# Guwange's FVF draws (neither Futari nor N&B calls SetFVF; the hook is guwange-nx's, gpu/d3d/hooks/shader.cpp): the
+# declaration D3D builds inside the device (+12368, elements at +52) gets a declaration record (the first PC boot with
+# Renut dropped those draws: "vertex declaration BBC93050 is not one the renderer knows").
+D3DDevice_SetFVF                              8225FB78  stores FVF +12608, builds the declaration at +12368 (sub_8225C140), sets +11992 (= the declaration field 0x2ED8) and the dirty bit; 3 sites

@@ -32,6 +32,7 @@
 #include <rex/input/state_merge.h>
 #include <rex/input/xinput/xinput_input_driver.h>
 #include <rex/logging.h>
+#include <rex/thread.h>
 
 #if REX_PLATFORM_SWITCH
 REXCVAR_DEFINE_STRING(input_backend, "switch", "Input", "Input backend: switch")
@@ -289,6 +290,17 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
     }
   }
   rex::latency::NoteInputRead();
+  {  // guwange-nx (2026-10-22, late input): which threads read the controllers, once each (the first eight)
+    thread_local bool seen = false;
+    static std::atomic<uint32_t> threads{0};
+    if (!seen) {
+      seen = true;
+      if (threads.fetch_add(1, std::memory_order_relaxed) < 8) {
+        REXLOG_INFO("[input] controllers read on thread {} (user {})", rex::thread::current_thread_system_id(),
+                    user_index);
+      }
+    }
+  }
   if (!assignment_) {
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }

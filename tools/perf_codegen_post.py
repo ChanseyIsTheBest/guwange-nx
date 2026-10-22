@@ -33,8 +33,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, 'app')
 SDK = os.path.join(ROOT, 'sdk')
 GEN = os.path.join(APP, 'generated')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import project  # noqa: E402  (guwange-nx, 2026-10-22: <name>_recomp.N.cpp, <name>_pch.h)
+PROJECT = project.name()
 SOURCES = [os.path.join(APP, 'src'), os.path.join(SDK, 'src'), os.path.join(SDK, 'include'), os.path.join(APP, 'CMakeLists.txt')]
 SOURCES += [os.path.join(APP, f) for f in os.listdir(APP) if f.endswith('.toml')]
+# guwange-nx (2026-10-22): a tree cloned from futari-nx keeps futari-nx's sources and tomls, unbuilt: their Futari
+# addresses would count as hooks of the same addresses here (every one a call left on the weak alias).
+unbuilt = project.unbuilt
 
 
 # Text that names functions without hooking them (sa2-nx's round-4 lesson: hook descriptions that named other
@@ -68,6 +74,8 @@ def hooked():
             os.path.join(d, f) for d, _, fs in os.walk(root) for f in fs
             if not f.endswith(('.a', '.obj', '.o', '.png', '.jpg', '.bin', '.txt', '.md'))]
         for path in paths:
+            if unbuilt(path):
+                continue
             try:
                 text = open(path, encoding='utf-8', errors='ignore').read()
             except OSError:
@@ -88,7 +96,7 @@ def direct_calls(folder, with_hook, undo, check):
     direct = re.compile(r'__imp__sub_([0-9A-F]{8})\(ctx, base\);')
     changed = files = seen = already = rehooked = 0
     for f in sorted(os.listdir(folder)):
-        if not (f.startswith('futari_recomp.') and f.endswith('.cpp')):
+        if not (f.startswith(PROJECT + '_recomp.') and f.endswith('.cpp')):
             continue
         path = os.path.join(folder, f)
         text = open(path, encoding='utf-8').read()
@@ -111,14 +119,14 @@ def direct_calls(folder, with_hook, undo, check):
                 open(path, 'w', encoding='utf-8', newline='\n').write(new)
         changed += n
     if seen == 0:
-        sys.exit('direct calls: no futari_recomp.*.cpp in ' + folder)
+        sys.exit('direct calls: no ' + PROJECT + '_recomp.*.cpp in ' + folder)
     if not undo and changed == 0 and already == 0:
         sys.exit('direct calls: nothing to convert and no direct calls in %s: the generated call shape changed' % folder)
     return changed, files, already, rehooked
 
 
 def no_volatile(folder, undo, check):
-    path = os.path.join(folder, 'futari_pch.h')
+    path = os.path.join(folder, PROJECT + '_pch.h')
     s = open(path, encoding='utf-8').read()
     marker = '// futari-nx: guest loads/stores without volatile'
     if undo:
@@ -164,7 +172,7 @@ BARRIER_MACRO = (BARRIER_MARKER + '\n#ifndef REX_LOOP_BARRIER\n'
 def loop_barriers(folder, undo, check):
     headers_total = files = 0
     for f in sorted(os.listdir(folder)):
-        if not (f.startswith('futari_recomp.') and f.endswith('.cpp')):
+        if not (f.startswith(PROJECT + '_recomp.') and f.endswith('.cpp')):
             continue
         path = os.path.join(folder, f)
         lines = open(path, encoding='utf-8').read().split('\n')
@@ -196,7 +204,7 @@ def loop_barriers(folder, undo, check):
             if not check:
                 open(path, 'w', encoding='utf-8', newline='\n').write('\n'.join(out))
     # The macro, in the precompiled header (before the guest memory macros).
-    pch = os.path.join(folder, 'futari_pch.h')
+    pch = os.path.join(folder, PROJECT + '_pch.h')
     text = open(pch, encoding='utf-8').read()
     if not undo and BARRIER_MARKER not in text:
         if '#define REX_LOAD_U8(x)' not in text:
@@ -220,7 +228,7 @@ def main():
             m = re.search(r'([0-9A-Fa-f]{8})', line)
             if m:
                 with_hook.add('sub_' + m.group(1).upper())
-    folders = sorted(os.path.join(GEN, d) for d in os.listdir(GEN) if os.path.isfile(os.path.join(GEN, d, 'futari_pch.h')))
+    folders = sorted(os.path.join(GEN, d) for d in os.listdir(GEN) if os.path.isfile(os.path.join(GEN, d, PROJECT + '_pch.h')))
     if not folders:
         sys.exit('no generated folders under ' + GEN)
     for folder in folders:
