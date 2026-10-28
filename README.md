@@ -115,7 +115,9 @@ optimisation and PGO from a console session of this version. Every optimisation 
 - **The CPU work of the sibling ports**: futari-nx's code generator pipeline (sa2-nx's CPU rounds and banjo-nx's codegen
   round) on all five modules, native copies of the C library's `memcpy` and `memset`, a lock-free game clock.
 - **Lower input lag**: the game reads the controllers as late in its frame as it safely can, and its 60 Hz follows the
-  screen's own refresh. On the console a button press reaches the screen in about 28 ms on average.
+  screen's own refresh. On the console a button press reaches the screen in about 28 ms on average. Since 1.0.1, when
+  a picture once misses its refresh and every later one would follow it a refresh late, the game skips one frame so
+  the pictures catch up again (about 17 ms less lag from then on).
 
 ## How it works
 

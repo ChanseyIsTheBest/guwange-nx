@@ -411,6 +411,6 @@ if(REXGLUE_PLATFORM_SWITCH)
     rexglue_switch_add_nro(guwange
         NAME "Guwange"
         AUTHOR "ChanseyIsTheBest"
-        VERSION "1.0.0"
+        VERSION "1.0.1"
         ${_guwange_nro_icon})
 endif()
